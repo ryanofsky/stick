@@ -1,6 +1,6 @@
 { EasyGDI v2.03 }
 
-{ added clipto, cliptorect, clearclip, ishappyptr }
+{ added clipto, cliptorect, clearclip, ishappyptr, gettextoffsetx,gettextoffset,y }
 
 unit easygdi;
 
@@ -24,6 +24,7 @@ type pFONT = ^FONT;
        fcolor,bgcolor:longint;
        halign,valign: word;
      end;  
+
 type BMP = ^EZBitmap;
      EZBitmap = record
        Breed: Word;
@@ -148,6 +149,10 @@ function getwrappedheight(ABMP:BMP; w:integer; text:string):integer;
 function getwrappedwidth(ABMP:BMP; w:integer; text:string):integer;
 function gettextwidth(ABMP: BMP; text:string):word;
 function gettextheight(ABMP: BMP; text:string):word;
+function gettextoffsetx(ABMP:BMP; text:string):integer;
+function gettextoffsety(ABMP:BMP):integer;
+
+
 
 procedure cliptorect(ABMP:BMP; x1,y1,x2,y2:hrgn);
 procedure clipto(ABMP:BMP; rgn: hrgn);
@@ -463,7 +468,6 @@ function getwrappedheight(ABMP:BMP; w:integer; text:string):integer;
     deleteobject(selectobject(DC,oldfont));
   end;
 
-
 function gettextwidth(ABMP: BMP; text:string):word;
   var oldfont: hfont;
       DC:HDC;
@@ -487,6 +491,38 @@ function gettextheight(ABMP: BMP; text:string):word;
 
     deleteobject(selectobject(DC,oldfont));
   end;
+
+function gettextoffsetx(ABMP:BMP; text:string):integer;
+  var oldfont: hfont;
+  begin
+    oldfont :=  prepfont(ABMP^.dchandle,ABMP^.TheFont);
+
+    case ABMP^.TheFont^.halign of
+    ta_left:    gettextoffsetx := 0;
+    ta_right:   gettextoffsetx := -loword(GetTextExtent(ABMP^.dchandle,pc(text),length(text)));
+    ta_center:  gettextoffsetx := -loword(GetTextExtent(ABMP^.dchandle,pc(text),length(text))) div 2;
+    end;
+
+    deleteobject(selectobject(ABMP^.dchandle,oldfont));
+  end;
+
+function gettextoffsety(ABMP:BMP):integer;
+  var oldfont: hfont;
+      textmetrics:ttextmetric;
+      dc:hdc;
+  begin
+    oldfont :=  prepfont(ABMP^.dchandle,ABMP^.TheFont);
+
+    gettextmetrics(ABMP^.dchandle,textmetrics);
+    case ABMP^.TheFont^.valign of
+    ta_baseline: gettextoffsety := -textmetrics.tmAscent;
+    ta_bottom:   gettextoffsety := -textmetrics.tmheight;
+    ta_top:      gettextoffsety := 0;
+    end;
+
+    deleteobject(selectobject(ABMP^.dchandle,oldfont));
+  end;
+
 
 procedure cliptorect(ABMP:BMP; x1,y1,x2,y2:hrgn);
   var rgn:hrgn;
