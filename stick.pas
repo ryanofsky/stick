@@ -1,14 +1,15 @@
 program whothehellcares;
-uses wobjects, winprocs, wintypes,strings;
+uses wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,wincrt;
 
 {$R stick.res}
 
 {--------------------------------------------------  Game Constants}
 
 const fps = 20;
-      gamespeed = 1;
+      gamespeed = 0.9;
       PinM = 100;
       path = 'C:\Russ\stick';
+      resetscores = false;
 
 {------------------------------------------------  Drawing Commands}
 
@@ -44,6 +45,7 @@ type SDC = ^StdDC;
        TheFont, OldFont, NewFont: HFont;
        From: Thandle;
        Kind: Word;
+       prpfont: tlogfont;
      end;
 
 type HDC = THandle;
@@ -155,11 +157,10 @@ function pc(st: string): pchar;
     pc := @p;
   end;  
 
-var prpfont: tlogfont;
-
 procedure setfont(DC:SDC; fontface:string; size,weight,italic,underline,strikeout:integer;angle:real );
   begin
-    with prpfont do
+    if DC<>nil then
+    with DC^.prpfont do
       begin
         lfHeight         := -1*size;
         lfWidth          := 0;
@@ -252,6 +253,42 @@ var x1,y1,x2,y2,x3,y3,x4,y4,c,d:integer;
       1: chord(DC^.handle, X1,Y1,X2,Y2,X3,Y3,X4,Y4);
       2: pie(DC^.handle, X1,Y1,X2,Y2,X3,Y3,X4,Y4);
     end;
+  end;
+
+function getred(color:longint):integer;
+var red,green,blue: integer;
+  begin
+    blue:=color div 65536;
+    green:=(color-blue*65536) div 256;
+    red:=color-65536*blue-256*green;
+    getred:=red;       
+  end;
+
+function getgreen(color:longint):integer;
+var red,green,blue: integer;
+  begin
+    blue:=color div 65536;
+    green:=(color-blue*65536) div 256;
+    red:=color-65536*blue-256*green;
+    getgreen:=green;       
+  end;
+
+function getblue(color:longint):integer;
+var red,green,blue: integer;
+  begin
+    blue:=color div 65536;
+    green:=(color-blue*65536) div 256;
+    red:=color-65536*blue-256*green; 
+    getblue:=blue;       
+  end;
+
+function gradient(color1,color2:longint; stepno,steps:integer):longint;
+var red,green,blue: integer;
+  begin
+    red   := round(stepno/steps*(  getred(color2) -   getred(color1)) +   getred(color1));
+    green := round(stepno/steps*(getgreen(color2) - getgreen(color1)) + getgreen(color1));
+    blue  := round(stepno/steps*( getblue(color2) -  getblue(color1)) +  getblue(color1));
+    gradient:=rgb(red,green,blue);
   end;
 
 (* ------------     Bitmap Routines    -------------- *)
@@ -489,7 +526,7 @@ var Msg: TMsg;
       DispatchMessage(Msg);
     end;
   end;
-  
+
 procedure defreeze;
 var msg: TMsg;
   begin
@@ -594,10 +631,77 @@ function abovezero(number: integer):integer;
     else abovezero := number;
   end;
 
+type TFilename = array [0..255] of Char;
+
+function FileOpen(HWindow:hwnd):string;
+const
+  DefExt = 'sav';
+var
+  OpenFN      : TOpenFileName;
+  Filter      : array [0..100] of Char;
+  FullFileName: TFilename;
+  WinDir      : array [0..145] of Char;
+  filename    : pchar;
+begin
+  SetCurDir(path);
+  StrCopy(FullFileName, '');
+  FillChar(Filter, SizeOf(Filter), #0);  { Set up for double null at end }
+  StrCopy(Filter, 'Game Files');
+  StrCopy(@Filter[StrLen(Filter)+1], '*.sav');
+  FillChar(OpenFN, SizeOf(TOpenFileName), #0);
+  with OpenFN do
+  begin
+    hInstance     := HInstance;
+    hwndOwner     := HWindow;
+    lpstrDefExt   := DefExt;
+    lpstrFile     := FullFileName;
+    lpstrFilter   := Filter;
+    lpstrFileTitle:= FileName;
+    flags         := ofn_FileMustExist;
+    lStructSize   := sizeof(TOpenFileName);
+    nFilterIndex  := 1;       {Index into Filter String in lpstrFilter}
+    nMaxFile      := SizeOf(FullFileName);
+  end;
+  if GetOpenFileName(OpenFN) then fileopen := strpas(fullfilename);
+  {SndPlaySound(FileName, 1);   {Second parameter must be 1} 
+end;
+
+function FileSave(HWindow:hwnd):string;
+const
+  DefExt = 'sav';
+var
+  OpenFN      : TOpenFileName;
+  Filter      : array [0..100] of Char;
+  FullFileName: TFilename;
+  WinDir      : array [0..145] of Char;
+  filename    : pchar;
+begin
+  SetCurDir(path);
+  StrCopy(FullFileName, '');
+  FillChar(Filter, SizeOf(Filter), #0);  { Set up for double null at end }
+  StrCopy(Filter, 'Game Files');
+  StrCopy(@Filter[StrLen(Filter)+1], '*.sav');
+  FillChar(OpenFN, SizeOf(TOpenFileName), #0);
+  with OpenFN do
+  begin
+    hInstance     := HInstance;
+    hwndOwner     := HWindow;
+    lpstrDefExt   := DefExt;
+    lpstrFile     := FullFileName;
+    lpstrFilter   := Filter;
+    lpstrFileTitle:= FileName;
+    flags         := ofn_FileMustExist;
+    lStructSize   := sizeof(TOpenFileName);
+    nFilterIndex  := 1;       {Index into Filter String in lpstrFilter}
+    nMaxFile      := SizeOf(FullFileName);
+  end;
+  if GetSaveFileName(OpenFN) then filesave := strpas(fullfilename);
+  {SndPlaySound(FileName, 1);   {Second parameter must be 1} 
+end;
 
 {------------------------------------------------   Fighter Objects}
 
-const fframes = round(2*fps/gamespeed+1);
+const fframes = round(5*fps/gamespeed+1);
 
 type tkeys = record
        left,right,up,down,punch,kick:word;
@@ -608,7 +712,7 @@ type pfprops = ^tfprops;
      tfprops = record
        l1x,l1y,l2x,l2y,cx,cy,a1x,a2x,head,size,duck,direction: real;
        x,y: integer;
-       jump,walkf,walkb,punch,kick,ducked: boolean;
+       jump,walkf,walkb,punch,kick,ducked,dying,alive: boolean;
      end;
 
 type pfdata = ^tfdata;
@@ -619,7 +723,7 @@ type pfdata = ^tfdata;
        hits,score:real;
        maxhits: integer;
        name,ftype: string;
-       alive: bool;
+       lastkill :bool;
      end;
 
 type pgenf = ^tgenf;
@@ -631,7 +735,8 @@ type pgenf = ^tgenf;
        DC: SDC;
        HWindow: Hwnd;
        constructor init(TheDC:SDC; xpos,ypos,
-         dir:integer; sze: real; c:longint; mhits: integer; nme: string);
+         dir:integer; sze: real; c:longint; mhits: integer;
+         lk:bool; nme: string);
        destructor done; virtual;
        procedure draw; virtual;
        procedure subinit; virtual;
@@ -659,7 +764,8 @@ type pgenf = ^tgenf;
      end;
 
 constructor tgenf.init(TheDC:SDC; xpos,ypos,
-         dir:integer; sze: real; c:longint; mhits: integer; nme: string);
+         dir:integer; sze: real; c:longint; mhits: integer;
+         lk:bool; nme: string);
   var x: integer;
   begin
     DC:=TheDC;
@@ -685,14 +791,16 @@ constructor tgenf.init(TheDC:SDC; xpos,ypos,
           walkb:= false;
           punch:= false;
           kick := false;
-          ducked := false
+          ducked := false;
+          alive:= true;
+          dying := false;
         end;
     data.name  := nme;
     data.maxhits := mhits;
     data.hits  := 0;
     data.score := 0;
     data.color := c;
-    data.alive := true;
+    data.lastkill := lk;
     closest := nil;
   end;
 
@@ -725,22 +833,17 @@ procedure tgenf.resize;
     messagebox(0,'TGENF.RESIZE has been called','StickFighter Error',0);
   end;
 
-
-
-
-
 procedure tgenf.advanceframe;
   var i: integer;
   begin
-    for i:=1 to fframes-1 do
-      begin
-        with data.pos[i] do
+    for i:=1 to fframes do
+      with data.pos[i] do
           begin
-            if x > 640 then x:=640;
-            if x < 0 then x:=0;
+            if x > 640 then x:=x-640;
+            if x < 0 then x:=x+640;
           end;
-        data.pos[i]:=data.pos[i+1]
-      end;
+    for i:=1 to fframes-1 do
+      data.pos[i]:=data.pos[i+1]
   end;
 
 procedure tgenf.walkr;
@@ -810,25 +913,29 @@ procedure tgenf.die;
   var x: integer;
       t: real;
   begin
-    if not data.dying then
+    t:=0;
+    if (not data.pos[1].dying) and (data.pos[1].alive) then
     for x:= 1 to fframes do
       with data.pos[x] do
         begin
           t:=t+1/fps*gamespeed;
-           if t < 1 then
+          if t < 1.5 then
             begin
-              size:=size/(t+1);  
-{             direction:=direction*(t+1) }
-              data.dying:=true;
-            end
-           else data.alive := false;
+              dying := true;
+              alive := true; 
+            end;
+          if t >= 1.5 then
+            begin
+              alive := false;
+              dying := false;
+            end;
         end;
   end;
 
 procedure tgenf.hit(ouch: real);
   begin
   if data.pos[1].ducked then ouch := ouch / 2;
-  data.hits := data.hits + ouch;
+  if data.maxhits <> 0 then data.hits := data.hits + ouch;
   end;
 
 procedure tgenf.kick;
@@ -1022,6 +1129,12 @@ type pstickman = ^tstickman;
 procedure tstickman.draw;
   var x: integer;
   begin
+    if data.pos[1].dying then
+      begin
+        setfont(DC,'Comic Sans MS',30,0,0,0,0,0);
+        txt(DC,320,60,3,color[15],data.name+' is dead!!');
+      end
+    else
     for x:= 0 to 30 do
       with pt[x] do
         if plot then
@@ -1054,14 +1167,26 @@ procedure tstickman.resize;
   end;
 
 procedure tstickman.subinit;
+  var x: integer;
   begin
     resize;
     with data.pos[1] do
       begin
         nose      := 1.4;
         steplit   := defl1+defl2;
-     end;
-     data.ftype   := 'STICK1';
+      end;
+      data.ftype   := 'STICK1';
+    for x:= 0 to 30 do
+      with pt[x] do
+        begin
+          plot := false;
+          color1 := 0;
+          color2 := 0;
+          color3 := 0;
+          lstyle := 0;
+          lthick := 0;
+          fillmode := 0;
+        end;
   end;
 
 procedure tstickman.setpoints;
@@ -1294,6 +1419,7 @@ type pfpool = ^tfpool;
        alive: bool;
        constructor Init(ALimit, ADelta: Integer);
        destructor done; virtual;
+       procedure Error(Code, Info: Integer); virtual;
      end;
 
 constructor tfpool.Init(ALimit, ADelta: Integer);
@@ -1313,8 +1439,107 @@ destructor tfpool.done;
         f := at(x);
         dispose(f,done)
       end;
-    tcollection.done;   
+    tcollection.done;
   end;
+
+procedure tfpool.Error(Code, Info: Integer);
+  begin
+  end;
+
+
+
+type tscoredata = record
+       name: string;
+       score: longint;
+       alive: bool;
+     end;
+
+type tscores = object
+       data: array[1..10] of tscoredata;
+       procedure add(who:string; what: longint);
+       procedure sort;
+       procedure save(filename: string);
+       procedure load(filename: string);
+       procedure clr;
+     end;
+
+procedure tscores.add(who:string; what: longint);
+  var i: integer;
+      beenthere: bool;
+  begin
+    beenthere := false;
+    sort;
+   for i := 1 to 10 do
+      begin
+        beenthere := beenthere or (data[i].name=who);
+        if data[i].name = who then
+           if data[i].score < what then data[i].score := what;
+      end;
+    if not beenthere then
+      begin
+        sort;
+        if (what > data[10].score) or not data[10].alive then
+        begin
+          data[10].name  := who;
+          data[10].score := what;
+          data[10].alive := true;
+        end;
+      end;
+    sort;
+  end;
+
+procedure tscores.sort;
+  var i,j,k: integer;
+      swap: tscoredata;
+  begin
+    for i := 1 to 9 do
+      for j := i to 10 do
+        begin
+          if (data[i].score < data[j].score) or not data[i].alive then
+            begin
+              swap    := data[i];
+              data[i] := data[j];
+              data[j] := swap;
+            end;
+        end;
+  end;
+
+procedure tscores.save(filename: string);
+  var f: file of tscoredata;
+      i: integer;
+  begin
+    assign(f,filename);
+    rewrite(f);
+    for i := 1 to 10 do
+      write(f,data[i]); 
+    close(f);
+  end;
+
+procedure tscores.load(filename: string);
+  var f: file of tscoredata;
+      i: integer;
+  begin
+    assign(f,filename);
+    reset(f);
+    for i := 1 to 10 do
+      read(f,data[i]); 
+    close(f);
+  end;
+
+procedure tscores.clr;
+  var i: integer;
+  begin
+    for i:= 1 to 10 do
+      with data[i] do
+        begin
+          alive := false;
+          score := 0;
+          name  := '';
+        end;
+  end;
+
+
+
 
 type pwind = ^twind;
      twind = object(twindow)
@@ -1324,9 +1549,16 @@ type pwind = ^twind;
        fpool: pfpool;
        pressesc: bool;
        pressany: bool;
+       fighting: bool;
        curfighter: pgenf;
        blank: BMP;
+       selected,activated: integer;
+       vlast: word;
+       keycount: integer;
+       keybuffer: array[0..63] of char;
+       scores: tscores;
        constructor init(AParent: PWindowsObject; ATitle: PChar);
+       procedure  wmchar(var Msg: TMessage);  virtual wm_First + wm_char;
        procedure WMLButtonDown(var Msg: TMessage);  virtual wm_First + wm_LButtonDown;
        procedure WMRButtonDown(var Msg: TMessage);  virtual wm_First + wm_RButtonDown;
        procedure WMLButtonUp(var Msg: TMessage);  virtual wm_First + wm_LButtonUp;
@@ -1334,12 +1566,37 @@ type pwind = ^twind;
        procedure WMKeyDown(var Msg:Tmessage); virtual wm_First + wm_Keydown;
        procedure WMKeyUp(var Msg:Tmessage); virtual wm_First + wm_KeyUp;
        procedure WMPaint(var Msg: Tmessage);        virtual wm_First + wm_Paint;
+       procedure WMMouseMove(var Msg: Tmessage); virtual wm_First + wm_MouseMove;
        procedure GetWindowClass( var WC: TWndClass); virtual;
        procedure wmsetfocus(var Msg: Tmessage); virtual wm_First + wm_setfocus;
        procedure wmkillfocus(var Msg: Tmessage); virtual wm_First + wm_killfocus;
        procedure givedc(TheDC: SDC); virtual;
+       function readkey: char; 
        destructor Done; virtual;
      end;
+
+function twind.ReadKey: Char;
+begin
+  if KeyCount > 0 then
+    begin
+      ReadKey := KeyBuffer[0];
+      Dec(KeyCount);
+      Move(KeyBuffer[1], KeyBuffer[0], KeyCount);
+    end
+  else readkey:=chr(0);
+end;
+
+procedure twind.wmchar(var Msg: TMessage);  
+  var ch: char;
+  begin
+    defwndproc(msg);
+    ch:=Char(msg.wparam);
+    if KeyCount < SizeOf(KeyBuffer) then
+      begin
+        KeyBuffer[KeyCount] := Ch;
+        Inc(KeyCount);
+      end;
+    end;
 
 constructor twind.Init(AParent: PWindowsObject; ATitle: PChar);
   var wc: twndclass;
@@ -1361,11 +1618,16 @@ constructor twind.Init(AParent: PWindowsObject; ATitle: PChar);
         blank := loadbmp(path+'\blank.bmp'); 
         setbmp(memdc,blank);
         fpool:=new(pfpool,init(1,1));
+        fighting:=false;
+        keycount:=0;
+        scores.load(path+'\scores.dat');
+        if resetscores then scores.clr;
       end;
   end;
 
 destructor twind.done;
   begin
+    scores.save(path+'\scores.dat');
     releasecapture;
     dispose(fpool,done);
     killDC(winddc);
@@ -1406,7 +1668,7 @@ procedure twind.wmpaint(var msg: tmessage);
        randomize;
        fin:=0;
        mode:='intro';
-       f:=new(pstickman,init(usedc,320,300,1,1.5,color[9],0,'Russ'));
+       f:=new(pstickman,init(usedc,320,300,1,1.5,color[9],0,True,'Russ'));
        f^.setpoints;
        for i:=0 to 30 do
          begin
@@ -1495,14 +1757,591 @@ procedure twind.wmpaint(var msg: tmessage);
        dispose(f,done);
     end;
 
-   procedure menu;
-     var fin: integer;
+   procedure fight; forward;
+   procedure players; forward;
+
+   procedure newg;
+     var i,j: integer;
+         f: pgenf;
      begin
+       mode:='newg';
+       setpen(WindDC,color[0],0,0);
+       setbrush(WindDC,0,0,0);
+       box(WindDC,0,0,640,480,0,0);
+       i := getlng(UseDC,mode);
+       setpen(WindDC,color[9],0,2);
+       qline(WindDC,320-i div 2,110,320+i div 2,110);
+
+       dispose(fpool,done);
+       fpool:=new(pfpool,init(1,1));
+
+       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[12],50,True,
+         'Computer')));
+       curfighter:=fpool^.at(fpool^.count-1);
+       curfighter^.setcomp;
+
+       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[9],50,True,
+         'Bob')));
+       curfighter:=fpool^.at(fpool^.count-1);
+       curfighter^.setkeys1;
+
+       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[10],50,True,
+         'Bob 2')));
+       curfighter:=fpool^.at(fpool^.count-1);
+       curfighter^.setkeys1;
+
+       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[0],0,True,
+         'Death')));
+       curfighter:=fpool^.at(fpool^.count-1);
+       curfighter^.setcomp;
+
+
+
+       players;
+
+       for i := 0 to fpool^.count-1 do
+         begin
+           f := fpool^.at(i);
+           for j := 1 to fframes do
+             with f^.data.pos[j] do
+               x:=round(640*(i+1)/(fpool^.count+1));
+         end;
+              setpen(WindDC,color[0],0,0);
+       setbrush(WindDC,0,0,0);
+       box(WindDC,0,0,640,480,0,0);
+       fight;
+     end;
+
+   procedure loadg;
+     var i,j: integer;
+         f: pgenf;
+         q: file of tfdata;
+         name:string; 
+     begin
+       name:=fileopen(Hwindow);
+       if name <> '' then
+         begin
+           assign(q,name);
+           reset(q);
+           dispose(fpool,done);
+           fpool:=new(pfpool,init(1,1));
+           while not eof(q) do
+             begin
+               fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[12],50,false,'O')));
+               f:=fpool^.at(fpool^.count-1);
+               read(Q,f^.data);
+             end; 
+           close(q);
+           fighting := true;
+         end;
+     end;
+
+   procedure saveg;
+     var i: integer;
+         f: pgenf;
+         q: file of tfdata;
+         name:string;
+     begin
+       name:=filesave(Hwindow);
+       if name <> '' then
+         begin
+           assign(q,name);
+           rewrite(q);
+           for i := 0 to fpool^.count-1 do
+             begin
+               f := fpool^.at(i);
+               write(q,f^.data);
+             end;
+           close(q);
+         end;
+     end;
+
+   procedure modify(who: integer);
+     var i,j,k,l: integer;
+         temp: string;
+         fin,click: integer;
+         timer,cl:longint;
+         menuoption: array[1..4] of string;
+         del,md,blink: bool;
+         kname:pchar;
+         a: char;
+         realhits,t1: real;
+
+     begin
+       del:=false; md:= false;
+       mode:='mod';
+       pressany:=false;
+       pressesc:=false;
        fin := 0;
-       mode:='menu';
+       selected := 1;
+       activated :=0;
+       curfighter:=fpool^.at(who);
+       new(kname);
+       keycount:=0;
+       realhits:=curfighter^.data.maxhits;
+       vlast:=0;
        repeat
-       fin:=1;
+         startdelay(timer);
+
+         setpen(UseDC,0,0,0); setbrush(UseDC,0,0,0); box(UseDC,0,0,640,480,0,0);
+
+         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0); txt(UseDC,320,15,3,color[15],'Modify Player');
+
+         setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+         txt(UseDC,30,80,1,color[15],'Name:');
+         txt(UseDC,130,80,1,color[15],curfighter^.data.name);
+
+         if click=1 then
+           begin
+             setpen(UseDC,color[14],0,0);
+             setbrush(UseDC,-1,-1,0);
+             box(UseDC,25,80,125,110,0,0);
+             i := ord(readkey);
+             with curfighter^.data do
+             if (i=32) or ((i>=65) and (i<=90)) or ((i>=97) and (i<=122)) or ((i>=48) and (i<=57)) then
+               name:=name+chr(i);
+             with curfighter^.data do
+             if (i=8) and (length(name)>0) then name := copy(name,1,length(name)-1);
+           end;
+
+         if (click>=2) and (click<=17) then
+           begin
+             setpen(UseDC,color[14],0,0);
+             setbrush(UseDC,-1,-1,0);
+             box(UseDC,25,120,125,150,0,0);
+             curfighter^.data.color:=color[click-2];
+           end;
+
+         txt(UseDC,30,120,1,color[15],'Color:');
+
+         for i:=0 to 15 do
+           begin
+             if color[i]=curfighter^.data.color then
+               setpen(UseDC,color[14],0,0)
+             else
+               setpen(UseDC,color[0],0,0);
+             setbrush(UseDC,color[i],-1,0);
+             box(UseDC,130+24*i,125,150+24*i,145,0,0);
+           end;
+
+         txt(UseDC,30,160,1,color[15],'Strength:');
+         str(realhits*2:0:0,temp);
+         txt(UseDC,130,160,1,color[15],temp+'%');
+         if click=18 then
+           begin
+             setpen(UseDC,color[14],0,0); setbrush(UseDC,-1,-1,0); box(UseDC,25,160,125,190,0,0);
+             i := ord(readkey);
+             with curfighter^.data do
+             if ((i>=48) and (i<=57)) then
+               temp:=temp+chr(i);
+             with curfighter^.data do
+             if (i=8) and (length(temp)>0) then temp := copy(temp,1,length(temp)-1);
+             val(temp,t1,i);
+             realhits:=t1/2;
+           end;
+         if click=19 then
+           begin
+             curfighter^.data.lastkill:=not curfighter^.data.lastkill;
+             activated:=0; click:=0;
+           end;
+         setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+         txt(UseDC,50,210,1,color[15],'End Fight if last remaining player');
+         setpen(UseDC,color[9],0,4);
+         if curfighter^.data.lastkill then
+           setbrush(UseDC,color[12],0,0)
+         else
+           setbrush(UseDC,0,0,0);
+         qcircle(UseDC,35,220,10,6);
+
+         setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+         txt(UseDC,30,260,1,color[15],'Keys:');
+         setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+
+         txt(UseDC,100,265,1,color[15],'Default Keys 1');
+         txt(UseDC,230,265,1,color[15],'Default Keys 2');
+         setbrush(UseDC,-1,-1,0);
+         if click=20 then
+           begin
+             click:=0; activated:=0;
+             setpen(UseDC,color[14],0,0);  box(UseDC,95,260,205,290,0,0);
+             curfighter^.setkeys1;
+           end;
+         if click=21 then
+           begin
+             click:=0; activated:=0;
+             setpen(UseDC,color[14],0,0);  box(UseDC,225,260,340,290,0,0);
+             curfighter^.setkeys2;
+           end;
+         if click=22 then
+           begin
+             click:=0; activated:=0;
+             curfighter^.data.keycodes.computer:=false;
+           end;
+         if click=23 then
+           begin
+             click:=0; activated:=0;
+             curfighter^.setcomp;
+           end;
+
+         setpen(UseDC,color[14],0,0);
+         if curfighter^.data.keycodes.computer then
+           box(UseDC,450,260,603,290,0,0)
+         else
+           begin
+             box(UseDC,360,260,420,290,0,0);
+
+             setfont(UseDC,'Comic Sans MS',15,7,0,0,0,0);
+             txt(UseDC,30,305,1,color[15],'Key Values:');
+             setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+
+             txt(UseDC,95+1*(640-95) div 7,305,3,color[15],'Up');
+             txt(UseDC,95+2*(640-95) div 7,305,3,color[15],'Down');
+             txt(UseDC,95+3*(640-95) div 7,305,3,color[15],'Left');
+             txt(UseDC,95+4*(640-95) div 7,305,3,color[15],'Right');
+             txt(UseDC,95+5*(640-95) div 7,305,3,color[15],'Kick');
+             txt(UseDC,95+6*(640-95) div 7,305,3,color[15],'Punch');
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.up),kname,20);
+             txt(UseDC,95+1*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.up,temp);
+             txt(UseDC,95+1*(640-95) div 7,325,3,color[15],temp);
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.down),kname,20);
+             txt(UseDC,95+2*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.down,temp);
+             txt(UseDC,95+2*(640-95) div 7,325,3,color[15],temp);
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.left),kname,20);
+             txt(UseDC,95+3*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.left,temp);
+             txt(UseDC,95+3*(640-95) div 7,325,3,color[15],temp);
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.right),kname,20);
+             txt(UseDC,95+4*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.right,temp);
+             txt(UseDC,95+4*(640-95) div 7,325,3,color[15],temp);
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.kick),kname,20);
+             txt(UseDC,95+5*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.kick,temp);
+             txt(UseDC,95+5*(640-95) div 7,325,3,color[15],temp);
+
+             GetKeyNameText(makelong(0,curfighter^.data.keycodes.punch),kname,20);
+             txt(UseDC,95+6*(640-95) div 7,345,3,color[15],strpas(kname));
+             str(curfighter^.data.keycodes.punch,temp);
+             txt(UseDC,95+6*(640-95) div 7,325,3,color[15],temp);
+
+             if vlast<>0 then
+               begin
+                 if click=24 then curfighter^.data.keycodes.up    :=vlast;
+                 if click=25 then curfighter^.data.keycodes.down  :=vlast;
+                 if click=26 then curfighter^.data.keycodes.left  :=vlast;
+                 if click=27 then curfighter^.data.keycodes.right :=vlast;
+                 if click=28 then curfighter^.data.keycodes.kick  :=vlast;
+                 if click=29 then curfighter^.data.keycodes.punch :=vlast;
+                 vlast:=0;
+               end;
+
+             j:=95+(click-23)*(640-95) div 7;
+             setpen(UseDC,color[14],2,0);
+
+             box(usedc,j-30,303,j+30,368,0,0);
+          end;
+
+             txt(UseDC,365,265,1,color[15],'Custom');
+             txt(UseDC,455,265,1,color[15],'Computer Controlled');
+
+             setfont(UseDC,'Comic Sans MS',20,9,0,0,0,0);
+             txt(UseDC,600,400,2,color[15],'Done');
+
+         if (not paused) and (UseDC=MemDC) then
+           bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
+         finishdelay(1000 div fps,timer, Hwindow);
+         click := activated;
+         if (pressesc) or (click=30) then fin:=1;
+         if fpool=nil then fin:=1 else
+         if not fpool^.alive then fin:=1;
        until fin=1;
+       curfighter^.data.maxhits:=round(realhits);
+       dispose(kname);
+     end;
+
+   procedure players;
+     var i,j,k,l: integer;
+         temp: string;
+         fin,click: integer;
+         timer,cl:longint;
+         menuoption: array[1..4] of string;
+         del,md,blink: bool;
+     begin
+       del:=false; md:= false;
+       mode:='players';
+       pressany:=false;
+       fin := 0;
+       selected := 1;
+       activated :=-1;
+       menuoption[1] := 'Add New Player';
+       menuoption[2] := 'Modify Player';
+       menuoption[3] := 'Delete Player';
+       menuoption[4] := 'Done';
+
+       repeat 
+         startdelay(timer);
+
+         setpen(UseDC,0,0,0); setbrush(UseDC,0,0,0); box(UseDC,0,0,640,480,0,0);
+
+         if (click=10) and (fpool^.count<10) then
+           begin
+             fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[0],50,True,
+               'New Player - Click Below to Modify')));
+             curfighter:=fpool^.at(fpool^.count-1);
+             curfighter^.setcomp;
+           end;
+
+         if click=11 then
+           begin
+             del := false;
+             md  := not md;
+           end;
+         if click=12 then
+           begin
+             md  := false;
+             del := not del;
+           end;
+         if del and (click>=0) and (click<=9) then
+           begin
+             curfighter:=fpool^.at(click);
+             curfighter^.done;
+             fpool^.atdelete(click);
+             del := false;
+           end;
+
+         if md and (click>=0) and (click<=9) then
+           begin
+             modify(click);
+             vlast:=0;
+             click:=-1;
+             md:=false;
+             mode:='players';
+           end;
+
+         if click=13 then fin:=1;
+
+         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
+         txt(UseDC,320,30,3,color[15],'Choose a Player');
+         setfont(UseDC,'Comic Sans MS',20,0,1,0,0,0);
+         txt(UseDC,20,90,1,color[15],'#');
+         txt(UseDC,50,90,1,color[15],'Name');
+         txt(UseDC,390,90,1,color[15],'Color');
+         txt(UseDC,460,90,1,color[15],'Type');
+         txt(UseDC,560,90,1,color[15],'Score');
+         setpen(UseDC,rgb(255,0,0),0,0);
+         qline(UseDC,20,115,620,115);
+         qline(UseDC,20,130+10*20,620,130+10*20);
+         setfont(UseDC,'Comic Sans MS',18,0,0,0,0,0);
+         for i:= 0 to fpool^.count-1 do
+           begin
+             if i=selected then
+               begin
+                 if del or md then
+                   begin
+                     blink := not blink;
+                     if blink then cl:=color[15] else cl:=rgb(255,0,0);
+                   end
+                 else
+                   begin
+                     cl:=color[15];
+                   end;
+               end
+             else
+               cl:=color[7];
+             curfighter:=fpool^.at(i);
+             str(i,temp);
+             txt(UseDC,20,120+20*i,1,cl,temp);
+             txt(UseDC,50,120+20*i,1,cl,curfighter^.data.name);
+             setpen(UseDC,color[14],0,0);
+             setbrush(UseDC,curfighter^.data.color,0,0);
+             box(UseDC,390,120+20*i,410,138+20*i,0,0);
+             if curfighter^.data.keycodes.computer then temp:='Computer'
+               else temp:='Human';
+             txt(UseDC,460,120+20*i,1,cl,temp);
+             str(curfighter^.data.score:0:0,temp);
+             txt(UseDC,560,120+20*i,1,cl,temp);
+           end;
+
+         for i := 1 to 4 do
+           begin
+             if i+9=selected then cl:=color[15] else cl:=color[7];
+             if ((i+9=11) and md) or ((i+9=12) and del) then cl:=rgb(255,0,0);
+             txt(UseDC,320,340+i*20,3,cl,menuoption[i]);
+           end;
+
+         if (not paused) and (UseDC=MemDC) then
+           bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
+         finishdelay(1000 div fps,timer, Hwindow);
+         click := activated; activated:=-1; 
+
+         if vlast=38 then selected:=selected-1;
+         if vlast=40 then selected:=selected+1;
+         if vlast=13 then click:=selected;
+         vlast:=0;
+
+       until fin=1;
+     end;
+
+   procedure highs;
+     var i,j,k: integer;
+         mx: longint;
+         temp: string;
+         f: pgenf;
+     begin
+       mx:=0;
+       mode:='highs';
+       setpen(WindDC,color[0],0,0);
+       setbrush(WindDC,0,0,0);
+       box(WindDC,0,0,640,480,0,0);
+       setfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
+       txt(WindDC,320,30,3,color[15],'High Scores');
+       setpen(WindDC,color[9],0,2);
+       pressany:=false;
+       scores.sort;
+       mx:=scores.data[1].score + 1;
+       for i := 1 to 10 do
+         with scores.data[i] do
+           if alive then  
+             begin
+               for j := 20 to round(530*score/mx)+20 do
+                 begin
+                  { gradient( }
+                   setpen(WindDC,gradient(rgb(226,45,0),rgb(251,195,67),j,621),0,1);
+                   qline(WindDC,j,75+i*35,j,95+i*35)
+                 end;
+               setfont(WindDC,'Comic Sans MS',20,0,0,0,0,0);
+               txt(WindDC,30,69+i*35,1,color[15],name);
+               str(score,temp);
+               txt(WindDC,610,69+i*35,2,color[15],temp);
+              end;  
+       repeat
+         unfreeze(hwindow);
+       until pressany;
+     end;
+
+   procedure about;
+     var i: integer;
+     begin
+       mode:='about';
+       setpen(WindDC,color[0],0,0);
+       setbrush(WindDC,0,0,0);
+       box(WindDC,0,0,640,480,0,0);
+       setfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
+       txt(WindDC,320,30,3,color[15],'About The Game');
+       i := getlng(UseDC,'About The Game');
+       setpen(WindDC,color[9],0,2);
+       qline(WindDC,320-i div 2,80,320+i div 2,80);
+
+       pressany:=false;
+       repeat
+         unfreeze(hwindow);
+       until pressany;
+     end;
+
+   procedure menu;
+    var f:pstickman;
+        fin: integer;
+        timer: longint;
+        i,j,k,l: integer;
+        title: bmp;
+        menuitem: array[1..7] of string;
+     begin
+       selected := 2;
+       activated :=0;
+       vlast:=0;
+       menuitem[1] := 'New Game';
+       menuitem[2] := 'Load Game';
+       menuitem[3] := 'Save Game';
+       menuitem[4] := 'Players';
+       menuitem[5] := 'High Scores';
+       menuitem[6] := 'About the Game';
+       menuitem[7] := 'Exit';
+       fin:=0;
+       mode:='menu';
+       f:=new(pstickman,init(usedc,320,300,1,1.5,color[9],0,True,'Russ'));
+       f^.setpoints;
+       for i:=0 to 30 do
+         begin
+           f^.pt[i].vx1:=random(23)-11;
+           f^.pt[i].vy1:=random(23)-11;
+           f^.pt[i].vx2:=random(23)-11;
+           f^.pt[i].vy2:=random(23)-11;
+         end;
+       f^.pt[15].vy2:=0;
+       f^.pt[15].vx2:=0;
+       pressany:=false;
+       repeat
+         startdelay(timer);
+         for i:=0 to 30 do
+           with f^.pt[i] do
+           begin
+             x1 := x1 + vx1;
+             y1 := y1 + vy1;
+             x2 := x2 + vx2;
+             y2 := y2 + vy2;
+             if (x1 < 0) or (x1 > 640) then vx1:=vx1*-1;
+             if (x2 < 0) or (x2 > 640) then vx2:=vx2*-1;
+             if (y1 < 0) or (y1 > 480) then vy1:=vy1*-1;
+             if (y2 < 0) or (y2 > 480) then vy2:=vy2*-1;
+           end;
+         setpen(UseDC,0,0,0); setbrush(usedc,0,0,0); box(usedc,0,0,640,480,0,0);
+         f^.draw;                     
+         setpen(UseDC,color[7],0,0); setbrush(usedc,0,0,0); box(usedc,150,50,490,430,0,0);
+         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
+         txt(UseDC,320,60,3,color[15],'Main Menu');
+         i := getlng(UseDC,'Main Menu');
+         setpen(UseDC,color[9],0,2);
+         qline(UseDC,320-i div 2,110,320+i div 2,110);
+         if vlast=38 then selected:=selected-1;
+         if vlast=40 then selected:=selected+1;
+         if vlast=13 then activated:=selected;
+         if (vlast=27) and fighting then begin fight; mode:='menu'; end;
+         vlast:=0;
+         if selected<1 then selected:=7;
+         if selected>7 then selected:=1;
+         for i:= 1 to 7 do
+           begin
+             if (i<>selected) and (i<>activated) then
+               begin
+                 setfont(UseDC,'Comic Sans MS',30,0,0,0,0,0);
+                 txt(UseDC,320,80+i*40,3,color[7],menuitem[i]);
+               end;
+             if (i=selected) and (i<>activated) then
+               begin
+                 setfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
+                 txt(UseDC,320,80+i*40-4,3,color[15],menuitem[i]);
+               end;
+             if (i=activated) then
+               begin
+                 setfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
+                 txt(UseDC,320,80+i*40-4,3,rgb(255,0,0),menuitem[i]);
+               end;
+           end;
+         case activated of
+         1: begin newg; mode:='menu'; activated:=0; vlast:=0; end;
+         2: begin loadg; mode:='menu'; activated:=0; vlast:=0; end;
+         3: begin saveg; mode:='menu'; activated:=0; vlast:=0; end;
+         4: begin players; mode:='menu'; activated:=0; vlast:=0; end;
+         5: begin highs; mode:='menu'; activated:=0; vlast:=0; end;
+         6: begin about; mode:='menu'; activated:=0; vlast:=0; end;
+         7: begin fin:=1 end;
+         else activated:=0;
+         end;
+
+         if (not paused) and (UseDC=MemDC) then
+           bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
+         unfreeze(hwindow);
+         finishdelay(1000 div fps,timer, Hwindow);
+         repeat unfreeze(HWindow); until not paused;
+       until fin=1;
+       dispose(f,done);
      end;
 
    procedure proximity(who:integer);
@@ -1520,7 +2359,7 @@ procedure twind.wmpaint(var msg: tmessage);
               begin
                 f:=fpool^.at(x);
                 posn := f^.data.pos[1].x-pos;
-                if abs(posn) < dist then
+                if (abs(posn) < dist) and (not f^.data.pos[1].dying) then
                   begin
                     dist := posn;
                     c    := f;
@@ -1528,6 +2367,7 @@ procedure twind.wmpaint(var msg: tmessage);
               end;
           end;
        f:=fpool^.at(who);
+       if fpool^.count = 1 then c:=nil;
        f^.setclose(dist,c);
        if c <> nil then if dist<0 then f^.look(-1) else f^.look(1);
      end;
@@ -1541,6 +2381,8 @@ procedure twind.wmpaint(var msg: tmessage);
          temp,t1: string;
          
      begin
+       fighting:=true;
+       pressesc:= false;
        fin:=0;
        mode:='fight';
        col:=0;
@@ -1551,37 +2393,14 @@ procedure twind.wmpaint(var msg: tmessage);
            begin
              if not fpool^.alive then exit;
              f:=fpool^.at(x);
-             with f^.data.keycodes do
-               if (computer) and (not f^.data.pos[1].punch) and
-               (not f^.data.pos[1].kick) then
-                 begin
-                   if abs(f^.closedist) > abs(1.3*f^.data.pos[1].size*
-                     f^.data.pos[1].direction*PinM) then f^.walkf
-                   else
-                     if random(2)=0 then f^.kick else f^.punch;
-                 end
-               else
-                 if not computer then
-                 begin
-                   if hiword(getkeystate(left))<>0 then f^.walkl;
-                   if hiword(getkeystate(right))<>0 then f^.walkr;
-                   if hiword(getkeystate(up))<>0 then f^.jump;
-                   if hiword(getkeystate(down))<>0 then f^.duck;
-                   if hiword(getkeystate(punch))<>0 then f^.punch;
-                   if hiword(getkeystate(kick))<>0 then f^.kick; 
-                 end;
+             if f<> nil then
              with f^ do
                begin
+                 scores.add(data.name,round(data.score)); 
                  unfreeze(HWindow);
-                 if data.hits > data.maxhits then die;
-                 proximity(x);
-                 setpoints;
-                 resize;
-                 if data.alive then draw;
-                 advanceframe;
 
                  scx:=320*(x mod 2);
-                 scy:=20*(x div 2);
+                 scy:=40*(x div 2);
 
                  setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
                  txt(UseDC,scx,scy,1,color[15],data.name);
@@ -1621,15 +2440,56 @@ procedure twind.wmpaint(var msg: tmessage);
                  setpen(UseDC,color[14],0,0);
                  setbrush(UseDC,-1,-1,0);
                  box(UseDC,p1x-90,p1y+19,p1x,p1y+29,0,0);
+
+                 proximity(x);
+                 setpoints;
+                 resize;
+                 draw;
+                 advanceframe;
+               end;
+             if f <> nil then
+             with f^.data.keycodes do
+               if (computer) and (not f^.data.pos[1].punch) and
+               (not f^.data.pos[1].kick) then
+                 begin
+                   if abs(f^.closedist) > abs(1.3*f^.data.pos[1].size*
+                     f^.data.pos[1].direction*PinM) then f^.walkf
+                   else
+                     if random(2)=0 then f^.kick else f^.punch;
+                 end
+               else
+                 if not computer then
+                 begin
+                   if hiword(getkeystate(left))<>0 then f^.walkl;
+                   if hiword(getkeystate(right))<>0 then f^.walkr;
+                   if hiword(getkeystate(up))<>0 then f^.jump;
+                   if hiword(getkeystate(down))<>0 then f^.duck;
+                   if hiword(getkeystate(punch))<>0 then f^.punch;
+                   if hiword(getkeystate(kick))<>0 then f^.kick; 
+                 end;
+             if f<> nil then
+             with f^ do
+               begin
+                 if data.hits > data.maxhits then die;
+                 advanceframe;
+               end;
+             if f <> nil then
+               if (f^.closest=nil) and (f^.data.lastkill) then fin:=1;
+             if f <> nil then
+              if (not f^.data.pos[1].alive) then
+               begin
+                 dispose(f,done);
+                 fpool^.atdelete(x);
+                 for i1:=0 to fpool^.count-1 do
+                   proximity(i1);
                end;
            end;
-{        setpen(UseDC,0,0,0); setbrush(UseDC,color[col],0,0);
-         box(UseDC,0,0,30,30,0,0); col:=15-col;    }
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
          finishdelay(1000 div fps,timer, Hwindow);
          repeat unfreeze(HWindow) until not paused;
          if not fpool^.alive then fin:=1;
+         if pressesc then begin fin:=1; fighting:=true; end;
       until fin=1;
      end;
 
@@ -1651,17 +2511,14 @@ procedure twind.wmpaint(var msg: tmessage);
         setbrush(WindDC,color[0],color[0],0);
         setpen(WindDC,color[0],0,2);
         box(WindDC,0,0,640,480,0,0);
-{        intro; }
-        menu;
-        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],0,'Russ')));
-        curfighter:=fpool^.at(0);
-        curfighter^.setkeys2;
-        curfighter^.setcomp;
 
-        fpool^.insert(new(pstickman,init(usedc,400,300,-1,1,color[12],50,'Bob')));
-        curfighter:=fpool^.at(1);
-        curfighter^.setkeys1;
-        fight;
+{        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],50,True,'Russ')));
+        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],50,True,'Russ')));
+        modify(0);
+ }
+        intro;
+        menu;
+        done;
       end;
     if paused then pause;
   end;
@@ -1684,12 +2541,93 @@ procedure twind.givedc(TheDC: SDC);
       end;
   end;
 
+procedure TWind.WMMouseMove(var Msg: Tmessage);
+  var pos: tpoint;
+      i,mx : integer;
+      
+  begin
+    defwndproc(msg);
+
+    pos.x := loword(msg.lparam);
+    pos.y := hiword(msg.lparam);
+
+
+    if mode ='menu' then mx:=8;
+    if (mode='menu') then
+      begin
+        i := (pos.y-80) div 40;
+        if (i<mx) and (i>0) and (pos.x>150) and (pos.x<490)
+          then selected := i;
+      end;
+
+    if mode='players' then
+      begin
+        i := (pos.y-120) div 20;
+        if (i>-1) and (i<10) then selected:=i else
+          begin
+            i := (pos.y-340) div 20+9;
+            if(i>9) and (i<14) then selected:=i else selected:=-1;
+          end;
+      end;
+  end;
+
 procedure TWind.WMLButtonDown(var Msg: TMessage);
   var S: array[0..9] of Char;
+      var pos: tpoint;
+      i,mx : integer;
   begin
     defwndproc(msg);
     setcapture(Hwindow);
+
+    pos.x := loword(msg.lparam);
+    pos.y := hiword(msg.lparam);
+    
     if not paused then pressany:=true;
+    if mode ='menu' then mx:=8;
+    if (mode='menu') then
+      begin
+        i := (pos.y-80) div 40;
+        if (i<mx) and (i>0) and (pos.x>150) and (pos.x<490)
+          then begin selected := i; activated := selected; end;
+      end;
+
+    if mode='players' then
+      begin
+        i := (pos.y-120) div 20;
+        if (i>-1) and (i<10) then begin selected:=i; activated:=selected; end else
+          begin
+            i := (pos.y-340) div 20+9;
+            if(i>9) and (i<14) then begin selected:=i; activated:=selected; end
+            else selected := -1;
+          end;
+      end;
+
+    if mode='mod' then
+      begin
+        if (pos.y>80) and (pos.y<110) then activated:=1;
+        if (pos.y>120) and (pos.y<150) then
+          begin
+            i:= (pos.x-130) div 24 +2;
+            if (i>=2) and (i<=17) then activated:=i;
+          end;
+        if (pos.y>160) and (pos.y<190) then activated:=18;
+        if (pos.y>205) and (pos.y<235) then activated:=19;
+        if (pos.y>260) and (pos.y<290) then
+          begin
+            if (pos.x>95) and (pos.x<205) then activated:=20;
+            if (pos.x>225) and (pos.x<340) then activated:=21;
+            if (pos.x>360) and (pos.x<420) then activated:=22;
+            if (pos.x>450) and (pos.x<603) then activated:=23;
+          end;
+        if (pos.y>300) and (pos.y<400) then
+          begin
+           i:= round((pos.x-95)/((640-95)/7))+23;
+           if (i>=24) and (i<=29) then activated:=i;
+          end;
+        if (pos.y>400) and (pos.y<435) and (pos.x>544) and (pos.x<606) then activated:=30;
+      end;
+     
+
   end;
 
 procedure TWind.WMRButtonDown(var Msg: TMessage);
@@ -1715,6 +2653,7 @@ procedure Twind.WMKeyDown(var Msg:Tmessage);
   var x:integer;
       f: pgenf;
   begin
+    vlast := msg.wparam;
     pressany := true;
     if msg.wparam = 27 then pressesc := true;
 
@@ -1759,8 +2698,6 @@ procedure Twind.WMKeyUp(var Msg:Tmessage);
     defwndproc(Msg);
   end;
 
-
-
 type tapp = object(tapplication)
        procedure initmainwindow; virtual;
      end;
@@ -1777,5 +2714,5 @@ var myapp: tapp;
 begin
   myapp.init('Appname');
   myapp.run;
-  myapp.done; 
+  myapp.done;
 end.
