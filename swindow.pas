@@ -42,6 +42,7 @@ type psfwindow = ^tsfwindow;
        procedure runintro; virtual;
        procedure runmenu; virtual;
        procedure runplayers; virtual;
+       procedure runplayer(n:integer); virtual;
        procedure runscores; virtual;
        procedure runabout; virtual;
        procedure rungame; virtual;
@@ -68,8 +69,10 @@ type psfwindow = ^tsfwindow;
        procedure menurestart(var Msg:Tmessage); virtual cm_First + menu_restart;
        procedure menumainmenu(var Msg:Tmessage); virtual cm_First + menu_mainmenu;
        procedure menuplayers(var Msg:Tmessage); virtual cm_First + menu_players;
+       procedure menuplayer(var Msg:Tmessage); virtual wm_user + wm_player;
        procedure menuhighscores(var Msg:Tmessage); virtual cm_First + menu_highscores;
        procedure menuaboutgame(var Msg:Tmessage); virtual cm_First + menu_aboutgame;
+       procedure menurungame(var Msg:Tmessage); virtual cm_First + menu_rungame;
 
        { screen messages }
        procedure WMMouseMove(var Msg: Tmessage); virtual wm_First + wm_MouseMove;
@@ -167,7 +170,9 @@ var filename:string;
         game := pgame(s.get);
         s.done;
         rungame;
-      end;
+      end
+    else
+      unpause;
   end;
 
 procedure tsfwindow.savegame;
@@ -285,6 +290,7 @@ procedure tsfwindow.swapfps;
 
 procedure tsfwindow.runintro;
   begin
+    newgame;
     if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
     screen := new(pintro,init(buffer,@self));
     unpause;
@@ -293,15 +299,28 @@ procedure tsfwindow.runintro;
 procedure tsfwindow.runmenu; 
   begin
     if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
-    screen := new(pmenu,init(buffer,@self));
+    screen := new(pmenu,init(buffer,@self,@gamerect));
     unpause;
   end;
 
 procedure tsfwindow.runplayers; 
   begin
-    if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
-    screen := new(pplayers,init(buffer,@self));
-    unpause;
+    if ishappyptr(game,sizeof(tgame)) then
+      begin
+        if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
+        screen := new(pplayers,init(buffer,@self,@gamerect,game));
+        unpause;
+      end;
+  end;
+
+procedure tsfwindow.runplayer(n:integer); 
+  begin
+    if ishappyptr(game,sizeof(tgame)) then
+      begin
+        if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
+        screen := new(pplayer,init(buffer,@self,@gamerect,game^.at(n)));
+        unpause;
+      end;
   end;
 
 procedure tsfwindow.runscores;
@@ -320,9 +339,12 @@ procedure tsfwindow.runabout;
 
 procedure tsfwindow.rungame;
   begin
-    if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
-    screen := new(pgamescreen,init(buffer,@self));
-    unpause;
+    if ishappyptr(game,sizeof(tgame)) then
+      begin
+        if ishappyptr(screen,sizeof(tscreen)) then dispose(screen,done);
+        screen := new(pgamescreen,init(buffer,@self));
+        unpause;
+      end;
   end;
 
 {- window messages ----------------------------------------------------------------------------}
@@ -379,10 +401,11 @@ procedure tsfwindow.wminitmenu(var Msg: Tmessage); {WM_INITMENU}
     end;
 
   begin
-    pause;
     checkmenuitem(attr.menu,menu_pausegame ,MF_BYCOMMAND or mf_check(screen^.paused));
     enablemenuitem(attr.menu,menu_pausegame ,MF_BYCOMMAND or mf_enable(screen^.canpause));
     enablemenuitem(attr.menu,menu_savegame ,MF_BYCOMMAND or mf_enable(ishappyptr(game,sizeof(tgame))));
+    enablemenuitem(attr.menu,menu_rungame ,MF_BYCOMMAND or mf_enable(ishappyptr(game,sizeof(tgame))));
+    enablemenuitem(attr.menu,menu_players ,MF_BYCOMMAND or mf_enable(ishappyptr(game,sizeof(tgame))));
     checkmenuitem(attr.menu,menu_fullscreen,MF_BYCOMMAND or mf_check(fullscreen));
     checkmenuitem(attr.menu,menu_fps,       MF_BYCOMMAND or mf_check(showfps));
     defwndproc(msg);
@@ -390,6 +413,7 @@ procedure tsfwindow.wminitmenu(var Msg: Tmessage); {WM_INITMENU}
 
 procedure tsfwindow.wmENTERMENULOOP(var Msg: Tmessage);
   begin
+    pause;
     menuopen := true;
     if fullscreen then showmenu;
   end;
@@ -424,6 +448,7 @@ procedure tsfwindow.WMERASEBKGND(var Msg:Tmessage); {wm_erasebkgnd}
 procedure tsfwindow.menunewgame(var Msg:Tmessage);
   begin
     newgame;
+    game^.genericplayers;
     runplayers;
   end;
 
@@ -445,6 +470,7 @@ procedure tsfwindow.menuquit(var Msg:Tmessage);
 procedure tsfwindow.menupause(var Msg:Tmessage);
   begin
     if screen^.paused then unpause else pause;
+{    pause;                                     }
   end;
 
 procedure tsfwindow.menufullscreen(var Msg:Tmessage);
@@ -458,7 +484,19 @@ procedure tsfwindow.menufps(var Msg:Tmessage);
   end;
 
 procedure tsfwindow.menurestart(var Msg:Tmessage);
+  var n:integer;
   begin
+    if ishappyptr(game,sizeof(tgame)) then
+      begin
+        n:=messagebox(hwindow,'Do you want to save the current game?','Stickfighter',MB_YESNOCANCEL);
+        case n of
+          idyes: savegame;
+          {idno:} 
+          idcancel:exit;
+        end;
+        dispose(game,done);
+        game := nil;
+      end;
     runintro;
   end;
 
@@ -472,6 +510,13 @@ procedure tsfwindow.menuplayers(var Msg:Tmessage);
     runplayers;
   end;
 
+procedure tsfwindow.menuplayer(var Msg:Tmessage);
+  begin
+    writeln('menuplayer called');
+    runplayer(msg.wparam);
+  end;
+
+
 procedure tsfwindow.menuhighscores(var Msg:Tmessage);
   begin
     runscores;
@@ -482,13 +527,18 @@ procedure tsfwindow.menuaboutgame(var Msg:Tmessage);
     runabout;
   end;
 
+procedure tsfwindow.menurungame(var Msg:Tmessage);
+  begin
+    rungame;
+  end;
+
 {- screen messages ----------------------------------------------------------------------------}
 
 procedure tsfwindow.WMMouseMove(var Msg: Tmessage); {wm_mousemove}
   begin
     wmncmousemove(msg);
     defwndproc(msg);
-    screen^.mousemove(Msg);
+    if not screen^.paused then screen^.mousemove(Msg);
   end;
 
 procedure tsfwindow.WMLButtonDown(var Msg: TMessage); {wm_lbuttondown}
@@ -520,24 +570,24 @@ procedure tsfwindow.WMRButtonUp(var Msg: Tmessage); {wm_rbuttonup}
 procedure tsfwindow.WMKeyDown(var Msg:Tmessage); {wm_keydown}
   begin
     defwndproc(Msg);
-    screen^.keydown(Msg);
+    if not screen^.paused then screen^.keydown(Msg);
   end;
 
 procedure tsfwindow.WMKeyUp(var Msg:Tmessage); {wm_keyup}
   begin
     defwndproc(Msg);
-    screen^.keyup(Msg);
+    if not screen^.paused then screen^.keyup(Msg);
   end;
 
 procedure tsfwindow.wmchar(var msg:tmessage); {wm_char}
   begin
     defwndproc(msg);
-    screen^.chartype(msg);
+    if not screen^.paused then screen^.chartype(msg);
   end;
 
 procedure tsfwindow.wmtimer(var Msg: Tmessage); {wm_timer}
   begin
-    screen^.timertick(msg);
+    if not screen^.paused then screen^.timertick(msg);
   end;
 
 

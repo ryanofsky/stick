@@ -2,12 +2,13 @@ unit game;
 
 interface
 
-uses wobjects,easygdi,fighters;
+uses wobjects,easygdi,fighters,sprocs;
 
 type pgame = ^tgame;
      tgame = object(tcollection)
        constructor Init;
        destructor done; virtual;
+       procedure genericplayers; virtual;
      end;
 
 type tscoredata = record
@@ -29,18 +30,22 @@ type   pscores = ^tscores;
 implementation
 
 constructor tgame.Init;
-  var f:pgenf;
   begin
     tcollection.Init(1,1);
-    insert(new(pstickman,init(200,350,1,1,color[12],50,True,'Computer')));
-    f := at(0); f^.setcomp;
-    insert(new(pstickman,init(200,350,1,1,color[9],50,True,'Bob')));
-    f := at(0); f^.setkeys1;
   end;
 
 destructor tgame.done;
   begin
     tcollection.done;
+  end;
+
+procedure tgame.genericplayers;
+  var f:pgenf;
+  begin
+    insert(new(pstickman,init(200,350,1,gamepinm,color[12],50,True,'Computer')));
+    f := at(0); f^.setcomp;
+    insert(new(pstickman,init(200,350,1,gamepinm,color[9],50,True,'Bob')));
+    f := at(1); f^.setkeys1;
   end;
 
 procedure tscores.add(who:string; what: longint);
