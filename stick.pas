@@ -176,6 +176,20 @@ procedure setfont(DC:SDC; fontface:string; size,weight,italic,underline,strikeou
       end;
   end;
 
+function getlng(DC:SDC; text:string):longint;
+  var p:pchar;
+  begin
+    if dc<>nil then
+    with DC^ do
+      begin
+        newfont:=createfontindirect(prpfont);
+        thefont:=selectobject(handle,Newfont);
+        if oldfont=0 then oldfont:=thefont else deleteobject(thefont);
+        p:=pc(text);
+        getlng:=loword(GetTextExtent(handle,p,strlen(p)));
+      end;
+  end;
+
 procedure txt(DC: SDC; x,y,align:integer; color:longint; text:string);
 var aln,lng:integer;
     p: pchar;
@@ -602,8 +616,10 @@ type pfdata = ^tfdata;
        pos: array [1..fframes] of tfprops;
        keycodes: tkeys;
        color: longint;
-       hits:integer;
+       hits,score:real;
+       maxhits: integer;
        name,ftype: string;
+       alive: bool;
      end;
 
 type pgenf = ^tgenf;
@@ -615,10 +631,11 @@ type pgenf = ^tgenf;
        DC: SDC;
        HWindow: Hwnd;
        constructor init(TheDC:SDC; xpos,ypos,
-         dir:integer; sze: real; c:longint; nme: string);
+         dir:integer; sze: real; c:longint; mhits: integer; nme: string);
        destructor done; virtual;
        procedure draw; virtual;
        procedure subinit; virtual;
+       procedure resize; virtual;
        procedure advanceframe; virtual;
        procedure walkr; virtual;
        procedure walkl; virtual;
@@ -628,6 +645,7 @@ type pgenf = ^tgenf;
        procedure punch; virtual;
        procedure jump; virtual;
        procedure duck; virtual;
+       procedure die; virtual;
        procedure stopduck; virtual;
        procedure setpoints; virtual;
        procedure setkeys1; virtual;
@@ -636,12 +654,12 @@ type pgenf = ^tgenf;
        procedure setkeyscust(l,u,r,d,p,k: word);
        procedure setdc(TheDC: SDC); virtual;
        procedure setclose(dist:integer; who:pgenf);
-       procedure hit; virtual;
+       procedure hit(ouch:real); virtual;
        procedure look(d:real);
      end;
 
 constructor tgenf.init(TheDC:SDC; xpos,ypos,
-         dir:integer; sze: real; c:longint; nme: string);
+         dir:integer; sze: real; c:longint; mhits: integer; nme: string);
   var x: integer;
   begin
     DC:=TheDC;
@@ -670,10 +688,12 @@ constructor tgenf.init(TheDC:SDC; xpos,ypos,
           ducked := false
         end;
     data.name  := nme;
+    data.maxhits := mhits;
     data.hits  := 0;
+    data.score := 0;
     data.color := c;
+    data.alive := true;
     closest := nil;
-    subinit;
   end;
 
 destructor tgenf.done;
@@ -699,6 +719,15 @@ procedure tgenf.draw;
   begin
     messagebox(0,'TGENF.DRAW has been called','StickFighter Error',0);
   end;
+
+procedure tgenf.resize;
+  begin
+    messagebox(0,'TGENF.RESIZE has been called','StickFighter Error',0);
+  end;
+
+
+
+
 
 procedure tgenf.advanceframe;
   var i: integer;
@@ -777,24 +806,39 @@ procedure tgenf.walkf;
         end;
   end;
 
-procedure tgenf.hit;
+procedure tgenf.die;
+  var x: integer;
+      t: real;
   begin
-  data.hits := data.hits + 1;
-{  writeln(data.name,':',data.hits); }
+    if not data.dying then
+    for x:= 1 to fframes do
+      with data.pos[x] do
+        begin
+          t:=t+1/fps*gamespeed;
+           if t < 1 then
+            begin
+              size:=size/(t+1);  
+{             direction:=direction*(t+1) }
+              data.dying:=true;
+            end
+           else data.alive := false;
+        end;
   end;
 
-{type pfprops = ^tfprops;
-     tfprops = record
-       l1x,l1y,l2x,l2y,cx,cy,a1x,a2x,head,size, duck: real;
-       x,y,direction: integer;
-       jump,walk,punch,kick: boolean;
-     end; }
+procedure tgenf.hit(ouch: real);
+  begin
+  if data.pos[1].ducked then ouch := ouch / 2;
+  data.hits := data.hits + ouch;
+  end;
 
 procedure tgenf.kick;
   var x: integer;
       t: real;
+      power: real;
   begin
     t:=0;
+    power := 1.1;
+    if data.pos[1].jump then power := power * 2;
     if not data.pos[1].kick then
     begin
       for x:= 1 to fframes do
@@ -810,15 +854,18 @@ procedure tgenf.kick;
           end;
       with data.pos[1] do
         if (abs(closedist) < abs(1.3*size*direction*PinM))
-          and (closest <> nil) then closest^.hit;
+          and (closest <> nil) then begin closest^.hit(power); data.score:=data.score+10; end;
     end;
   end;
 
 procedure tgenf.punch;
   var x: integer;
       t: real;
+      power: real;
   begin
     t:=0;
+    power := 1;
+    if data.pos[1].jump then power := power * 2;
     if not data.pos[1].punch then
       begin
         for x:= 1 to fframes do
@@ -834,7 +881,7 @@ procedure tgenf.punch;
             end;
         with data.pos[1] do
           if (abs(closedist) < abs(1.2*size*direction*PinM))
-            and (closest <> nil) then closest^.hit;
+            and (closest <> nil) then begin closest^.hit(power); data.score:=data.score+10; end;
       end;
   end;
 
@@ -967,6 +1014,7 @@ type pstickman = ^tstickman;
        Sx,Sy: integer; }
        nose: real;
        procedure subinit; virtual;
+       procedure resize; virtual;
        procedure setpoints; virtual;
        procedure draw; virtual;
      end;
@@ -989,17 +1037,27 @@ procedure tstickman.draw;
   end;
 {-----------------------------------------------------------------------------}
 
-procedure tstickman.subinit;
+procedure tstickman.resize;
+  var x: integer;
   begin
-    with data.pos[1] do
+    for x:= 1 to fframes do
+    with data.pos[x] do
       begin
         defl1     := round(0.5  * PinM  * size);
-        defl2     := round(0.4  * PinM  * size);
+        defl2     := round(0.4  * PinM  * size); 
         defa1     := round(0.3  * PinM  * size);
         defa2     := round(0.3  * PinM  * size);
         deftorso  := round(0.4  * PinM  * size);
         headw     := round(0.25 * PinM  * size);
         headh     := round(0.25 * PinM  * size);
+      end;
+  end;
+
+procedure tstickman.subinit;
+  begin
+    resize;
+    with data.pos[1] do
+      begin
         nose      := 1.4;
         steplit   := defl1+defl2;
      end;
@@ -1010,6 +1068,7 @@ procedure tstickman.setpoints;
   var duckby,ang,a2,a3,t1x,t1y,t2x,t2y: real;
       ctx,cty: integer;
   begin
+    subinit;
     with data.pos[1] do
       begin
         duckby := duck*(defl1+defl2);
@@ -1209,12 +1268,6 @@ t1y := cty-deftorso-head*PinM*size/2;        {Hdy}
             angle2:=260;
           end;
 
-
-
-
-
-
-
 { qarc(DC,x1,y1,x2,y2,angle1,angle2,way); }
 
 {-----------------------------------------------------------------------------}
@@ -1305,7 +1358,7 @@ constructor twind.Init(AParent: PWindowsObject; ATitle: PChar);
         h:=480;
         first:=TRUE;
         MemDC:=makeDC(0,1);
-        blank := loadbmp(path+'\blank.bmp');
+        blank := loadbmp(path+'\blank.bmp'); 
         setbmp(memdc,blank);
         fpool:=new(pfpool,init(1,1));
       end;
@@ -1353,7 +1406,7 @@ procedure twind.wmpaint(var msg: tmessage);
        randomize;
        fin:=0;
        mode:='intro';
-       f:=new(pstickman,init(usedc,320,300,1,1.5,color[9],'Russ'));
+       f:=new(pstickman,init(usedc,320,300,1,1.5,color[9],0,'Russ'));
        f^.setpoints;
        for i:=0 to 30 do
          begin
@@ -1480,10 +1533,13 @@ procedure twind.wmpaint(var msg: tmessage);
      end;
 
    procedure fight;
-     var x,fin,col:integer;
+     var x,fin,col,i1,p1x,p1y:integer;
          f: pgenf;
          timer: longint;
          flip: bool;
+         scx,scy: integer;
+         temp,t1: string;
+         
      begin
        fin:=0;
        mode:='fight';
@@ -1499,7 +1555,7 @@ procedure twind.wmpaint(var msg: tmessage);
                if (computer) and (not f^.data.pos[1].punch) and
                (not f^.data.pos[1].kick) then
                  begin
-                   if abs(f^.closedist) > abs(1.4*f^.data.pos[1].size*
+                   if abs(f^.closedist) > abs(1.3*f^.data.pos[1].size*
                      f^.data.pos[1].direction*PinM) then f^.walkf
                    else
                      if random(2)=0 then f^.kick else f^.punch;
@@ -1517,10 +1573,54 @@ procedure twind.wmpaint(var msg: tmessage);
              with f^ do
                begin
                  unfreeze(HWindow);
+                 if data.hits > data.maxhits then die;
                  proximity(x);
                  setpoints;
-                 draw;
+                 resize;
+                 if data.alive then draw;
                  advanceframe;
+
+                 scx:=320*(x mod 2);
+                 scy:=20*(x div 2);
+
+                 setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+                 txt(UseDC,scx,scy,1,color[15],data.name);
+
+                 setpen(UseDC,rgb(255,0,0),0,1);
+                 qline(UseDC,scx,scy+25,scx+getlng(UseDC,data.name),scy+25);
+
+                 setfont(UseDC,'Times New Roman',12,7,0,0,0,0);
+                 str(data.score:0:0,temp);
+                 txt(UseDC,scx,scy+25,1,color[15],'Score: '+temp);
+
+                 str(data.hits:0:0,temp);
+                 str(data.maxhits,t1);
+
+                 p1x:=scx+305; p1y:=scy+7;
+                 if data.maxhits <> 0 then
+                   begin
+                     i1:=100-round(data.hits/50*100);
+                     str(i1,temp);
+                     txt(UseDC,p1x,p1y,2,color[15],'Strength: '+temp+'%');
+                   end
+                 else  
+                   begin
+                     txt(UseDC,p1x-18,p1y,2,color[15],'Strength: ');
+                     setfont(UseDC,'Symbol',12,7,0,0,0,0);
+                     txt(UseDC,p1x,p1y,2,rgb(255,0,0),chr(165));
+                   end;
+
+                 setpen(UseDC,-1,0,0);
+                 if (data.maxhits=0) then i1:=0 else i1:=round(data.hits/50*90);
+                 if (i1>90) then i1:=90;
+                 if (i1<0) then  i1:= 0;
+
+                 setbrush(UseDC,data.color,-1,0);
+                 box(UseDC,p1x-90,p1y+19,p1x-i1,p1y+29,0,0);
+
+                 setpen(UseDC,color[14],0,0);
+                 setbrush(UseDC,-1,-1,0);
+                 box(UseDC,p1x-90,p1y+19,p1x,p1y+29,0,0);
                end;
            end;
 {        setpen(UseDC,0,0,0); setbrush(UseDC,color[col],0,0);
@@ -1535,7 +1635,7 @@ procedure twind.wmpaint(var msg: tmessage);
 
   procedure pause;
     begin
-      setbrush(WindDC,color[7],color[0],4);
+      setbrush(WindDC,color[7],-1,4);
       setpen(WindDC,color[0],0,2);
       box(WindDC,0,0,640,480,0,0);
       setfont(WindDC,'Stencil',150,0,0,0,0,45);
@@ -1551,14 +1651,14 @@ procedure twind.wmpaint(var msg: tmessage);
         setbrush(WindDC,color[0],color[0],0);
         setpen(WindDC,color[0],0,2);
         box(WindDC,0,0,640,480,0,0);
-        intro;
+{        intro; }
         menu;
-        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],'Russ')));
+        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],0,'Russ')));
         curfighter:=fpool^.at(0);
         curfighter^.setkeys2;
         curfighter^.setcomp;
 
-        fpool^.insert(new(pstickman,init(usedc,400,300,-1,1,color[12],'Bob')));
+        fpool^.insert(new(pstickman,init(usedc,400,300,-1,1,color[12],50,'Bob')));
         curfighter:=fpool^.at(1);
         curfighter^.setkeys1;
         fight;
