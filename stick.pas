@@ -161,7 +161,9 @@ var t: longint;
 const fps = 5;
       gamespeed = 1;
 
-      fframes = round(2*fps/gamespeed+1); 
+      fframes = round(2*fps/gamespeed+1);
+
+      PinM = 150;
 
 type tkeys = record
        left,right,up,down,punch,kick:integer;
@@ -169,31 +171,33 @@ type tkeys = record
 
 type pfprops = ^tfprops;
      tfprops = record
-       l1x,l1y,l2x,l2y,cx,cy,a1x,a2x,head,size: real;
+       l1x,l1y,l2x,l2y,cx,cy,a1x,a2x,head,size, duck: real;
        x,y,direction: integer;
-       jump,walk,punch,kick,duck: boolean;
+       jump,walk,punch,kick: boolean;
      end;
 
 type pgenf = ^tgenf;
      tgenf = object(Tobject)
+       defheight: integer;
        pos: array [1..fframes] of tfprops;
        keycodes: tkeys;
        DC: HDC;
        HWindow: Hwnd;
-       constructor init(TheDC:HDC; TheWind: Hwnd; xpos,ypos:integer; sze: real);
+       constructor init(TheDC:HDC; TheWind: Hwnd; xpos,ypos, dir:integer; sze: real);
        destructor done; virtual;
        procedure draw; virtual;
-       procedure advanceframe;
-       procedure walkr;
-       procedure walkl;
-       procedure kick;
-       procedure punch;
-       procedure jump;
-       procedure duck;
-       procedure setkeys1;
+       procedure subinit; virtual;
+       procedure advanceframe; virtual;
+       procedure walkr; virtual;
+       procedure walkl; virtual;
+       procedure kick; virtual;
+       procedure punch; virtual;
+       procedure jump; virtual;
+       procedure duck; virtual;
+       procedure setkeys1; virtual;
      end;
 
-constructor tgenf.init(TheDC:HDC; TheWind: Hwnd; xpos,ypos: integer; sze:real);
+constructor tgenf.init(TheDC:HDC; TheWind: Hwnd; xpos,ypos, dir: integer; sze:real);
   var x: integer;
   begin
     DC:=TheDC;
@@ -209,12 +213,25 @@ constructor tgenf.init(TheDC:HDC; TheWind: Hwnd; xpos,ypos: integer; sze:real);
           a1x  := 0.5;
           a2x  := 0.5;
           head := 0.5;
+          duck := 0.5;
+          x    := xpos;
+          y    := ypos;
+          direction := dir;
+          jump := false;
+          walk := false;
+          punch:= false;
+          kick := false;
         end;
-
+    subinit;
   end;
 
 destructor tgenf.done;
   begin
+  end;
+
+procedure tgenf.subinit;
+  begin
+    messagebox(0,'TGENF.SUBINIT has been called','StickFighter Error',0);
   end;
 
 procedure tgenf.draw;
@@ -270,12 +287,56 @@ procedure tgenf.setkeys1;
 
 type pstickman = ^tstickman;
      tstickman = object(tgenf)
+       defl1,defl2,defa1,defa2,headdiam: integer;
+       K1x,K1y,K2x,K2y,F1x,F1y,F2x,F2y,Ctx,Cty,E1x,E1y,E2x,E2y,H1x,H1y,H2x,H2y,Hdx,Hdy: integer;
+       procedure subinit; virtual;
        procedure draw; virtual;
      end;
 
 procedure tstickman.draw;
   begin
+    setpen(DC,color[4],0,2);
+    setbrush(DC,color[0],color[0],0);
     qcircle(DC,pos[1].x,pos[1].y,10,10);
+
+
+
+
+{
+
+          l1x  := 0.5;
+          l2x  := 0.5;
+          l2y  :=  -1;
+          cx   :=   0;
+          cy   :=   0;
+          a1x  := 0.5;
+          a2x  := 0.5;
+          head := 0.5;
+          duck := 0.5;
+          x    := xpos;
+          y    := ypos;
+          direction := dir;
+          jump := false;
+          walk := false;
+          punch:= false;
+          kick := false;
+}
+
+
+
+
+
+
+  end;
+
+procedure tstickman.subinit;
+  begin
+    defheight := round(1.75 * PinM);
+    defl1     := round(0.5 * PinM);
+    defl2     := round(0.5 * PinM);
+    defa1     := round(0.4 * PinM);
+    defa2     := round(0.4 * PinM);
+    headdiam  := round(0.3 * PinM);
   end;
 
 type pwind = ^twind;
@@ -323,6 +384,7 @@ procedure TWind.GetWindowClass( var WC: TWndClass);
 
 destructor twind.done;
   begin
+    releasecapture;
     dispose(fpool,done);
     ReleaseDC(HWindow, WindDC);
     twindow.done;
@@ -334,10 +396,7 @@ procedure TWind.WMLButtonDown(var Msg: TMessage);
     defwndproc(msg);
     setcapture(Hwindow);
     ldown:=true;
-    if mode='intro' then
-      begin
-      end
-    else
+    if (mode='intro') or (mode='menu') or (mode='test') then
       begin
         setpen(windDC,color[4],0,0);
         qcircle(windDC,Msg.LParamLo+attr.X, Msg.LParamHi+attr.Y,10,10);
@@ -414,8 +473,9 @@ procedure twind.wmpaint(var msg: tmessage);
         setbrush(WindDC,0,color[15],0);
         intro;
         menu;
-        fpool^.insert(new(pstickman,init(WindDC,Hwindow,200,200,1)));
+        fpool^.insert(new(pstickman,init(WindDC,Hwindow,200,200,1,1)));
         curfighter:=fpool^.at(0);
+        fight; 
         curfighter^.draw;
       end;
      
