@@ -2,10 +2,12 @@ unit sprocs;
 
 interface
 
-uses wintypes,winprocs,maths,wobjects;
+uses wintypes,winprocs,maths,wobjects,easygdi;
 
 const WM_ENTERMENULOOP = $0211;
 const WM_EXITMENULOOP  = $0212;
+
+const gamepinm = 100;
 
 const
   menu_newgame = 2;
@@ -20,6 +22,9 @@ const
   menu_highscores = 101;
   menu_aboutgame = 9;
   menu_fps = 200;
+  menu_rungame=40001;
+  wm_player = wm_user+1;
+
 
 const fpsinterval = 10;
       fpslabel = ' frames/sec';
@@ -40,10 +45,20 @@ type tmapmode = record
 procedure savemapmode(dc:hdc; var mapmode:tmapmode);
 procedure writemapmode(dc:hdc; s:string);
 procedure loadmapmode(dc:hdc; var mapmode:tmapmode);
+
+type tsavebmp = record
+       rfont:font;
+       pencolor:longint; penwidth,penstyle:integer;
+       brushcolor1,brushcolor2: longint; brushstyle:integer;
+     end;
+
+procedure setbmp(thebmp:bmp; var saved:tsavebmp);
+
 function rmin(x,y:real):real;
 function gint(x:real):longint;
 function bounce(time,min,max,velocity,init:real):real;
 function descendupon(time,etime,startv,endv:real):real;
+function choose(condition:boolean; iftrue,iffalse:integer):integer;
 
 implementation
 
@@ -152,6 +167,13 @@ procedure loadmapmode(dc:hdc; var mapmode:tmapmode);
     setwindowext  (dc,loword(mapmode.windowe)  , hiword(mapmode.windowe));
   end;
 
+procedure setbmp(thebmp:bmp; var saved:tsavebmp);
+  begin
+    setfont(thebmp,saved.rfont);
+    setpen(thebmp,saved.pencolor,saved.penstyle,saved.penwidth);
+    setbrush(thebmp,saved.brushcolor1,saved.brushcolor2,saved.brushstyle);
+  end;
+
 function rmin(x,y:real):real;
   begin
     if x<y then rmin := x else rmin := y;
@@ -176,6 +198,12 @@ function descendupon(time,etime,startv,endv:real):real;
   begin
     descendupon := (endv-startv)/etime*rmin(time,etime)+startv;
   end;
+
+function choose(condition:boolean; iftrue,iffalse:integer):integer;
+  begin
+    if condition then choose := iftrue else choose := iffalse;
+  end;
+
 
 
 begin
