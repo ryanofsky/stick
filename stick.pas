@@ -8,7 +8,6 @@ uses easygdi, wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,win
 const fps = 20;
       gamespeed = 0.9;
       PinM = 100;
-{     path = 'C:\Russ\dev\scifair\code'; }
       resetscores = false;
 
 {------------------------------------------------  Drawing Commands}
