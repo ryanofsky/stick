@@ -162,6 +162,7 @@ type pplayers = ^tplayers;
      tplayers = object(tmenuscreen)
      game:pgame;
      selectedplayer:pointer;
+     playerbox:pscontrol;
      constructor init(drawbmp:bmp; wnd:pwindow; gamescreen:prect; agame:pgame);
      procedure drawback; virtual;
      procedure playerscreen(x:word); virtual;
@@ -1085,6 +1086,8 @@ procedure cgamescreen.activate;
 
 type pcplayerlist = ^cplayerlist;
      cplayerlist = object(tscontrol)
+       box: trect;
+       constructor init(parentmenu: pscreen; x,y,width,height:integer);
        procedure activate; virtual;
        procedure setbounds; virtual;
        procedure paint; virtual;
@@ -1095,6 +1098,15 @@ type pcplayerlist = ^cplayerlist;
        procedure chartype(var msg:tmessage); virtual;
      end;
 
+constructor cplayerlist.init(parentmenu: pscreen; x,y,width,height:integer);
+  begin
+    box.left   := x;
+    box.right  := x+width;
+    box.top    := y;
+    box.bottom := y+height;
+    setbounds;
+  end;
+
 procedure cplayerlist.activate;
   begin
     tscontrol.activate;
@@ -1102,12 +1114,20 @@ procedure cplayerlist.activate;
 
 procedure cplayerlist.setbounds;
   begin
-    tscontrol.setbounds;
+    deleteobject(area);
+    area := CreateRectRgn(box.left,box.top,box.right,box.bottom);
   end;
 
 procedure cplayerlist.paint;
+  var i:integer;
   begin
-    tscontrol.paint;
+{    tscontrol.paint;
+    circle(menu^.usebmp,(box.left+box.right)div 2,(box.top+box.bottom)div 2,
+          (box.right-box.left)div 2,(box.bottom-box.top)div 2);
+    for i := 1 to pplayers(menu)^.game^.count do
+      begin
+
+      end;}
   end;
 
 procedure cplayerlist.mousedown(var msg:tmessage);
@@ -1122,17 +1142,15 @@ procedure cplayerlist.chartype(var msg:tmessage);
   begin
   end;
 
-
-
-
-
-
 constructor tplayers.init(drawbmp:bmp; wnd:pwindow; gamescreen:prect; agame:pgame);
   var pr:ttextproperties;
   begin
     tmenuscreen.init(drawbmp,wnd,gamescreen);
     game := agame;
     selectedplayer := nil;
+
+    playerbox := new(pcplayerlist);
+    controls^.insert(playerbox);
 
     quickfont(pr.normal.rfont,comic,-18);
     pr.normal.rfont.fcolor := color[7];
@@ -1222,11 +1240,6 @@ constructor tplayer.init(drawbmp:bmp; wnd:pwindow; gamescreen:prect; afighter:pg
   end;
 
 
-
-
-
-
-
 {- Score Screen ---------------------------------------------------------------------}
 
 constructor tscorescreen.init(drawbmp:bmp; wnd:pwindow; thescores:pscores);
@@ -1294,14 +1307,14 @@ var i,j,mx:integer;
 var SaveExit:Tfarproc;
 procedure exitdebug; far;
 begin
-{  ExitProc := SaveExit;
-  close(debug);}
+  ExitProc := SaveExit;
+  close(debug);
 end;
 
 begin
-{  SaveExit := ExitProc;
+  SaveExit := ExitProc;
   ExitProc := @Exitdebug;
 
   assign(debug,'c:\russ\sht4brns.txt');
-  rewrite(debug);}
+  rewrite(debug);
 end.
