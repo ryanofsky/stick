@@ -5,7 +5,6 @@ interface
 uses dynvar,wobjects,easygdi,sprocs;
 
 const f_stickman = 1;
-const PinM = 100;
 
 type tkeys = record
        left,right,up,down,punch,kick:word;
@@ -15,7 +14,7 @@ type tkeys = record
      tfposition = record
        x,y,l1x,l1y,l2x,l2y,cx,cy,a1x,a2x,head,duck:pdynamicreal;
        jump,walkf,walkb,punch,kick,ducked,dying,alive:pdynamicbool;
-       size,direction:real;
+       pinm,direction:real;
      end;
 
 type tfproperties = record
@@ -34,7 +33,7 @@ type tfproperties = record
        fposition: tfposition;
        closedist:integer;
        closest:pgenf;
-       constructor init(x,y,direction:integer; size: real;
+       constructor init(x,y,direction:integer; pinm: real;
                         color:longint; maxhits: integer;
                         lastkill:boolean; name: string);
        constructor load(var S: TStream);
@@ -79,7 +78,7 @@ type pstickman = ^tstickman;
      tstickman = object(tgenf)
        pt: array[0..30] of stickpos;
        dims: stickdims;
-       constructor init(x,y,direction:integer; size: real;
+       constructor init(x,y,direction:integer; pinm:real;
                         color:longint; maxhits: integer;
                         lastkill:boolean; name: string);
        constructor load(var S: TStream);
@@ -93,7 +92,7 @@ type pstickman = ^tstickman;
 
 implementation
 
-constructor tgenf.init(x,y,direction:integer; size: real;
+constructor tgenf.init(x,y,direction:integer; pinm: real;
             color:longint; maxhits: integer; lastkill:boolean;
             name: string);
   begin
@@ -117,7 +116,7 @@ constructor tgenf.init(x,y,direction:integer; size: real;
     new(fposition.ducked,   init(false));
     new(fposition.dying,    init(false));
     new(fposition.alive,    init(true));
-    fposition.size :=       size;
+    fposition.pinm :=       pinm;
     fposition.direction :=  direction;
     
     fproperties.color := color;
@@ -155,7 +154,7 @@ constructor tgenf.load(var S: TStream);
     fposition.ducked    := pdynamicbool(s.get);
     fposition.dying     := pdynamicbool(s.get);
     fposition.alive     := pdynamicbool(s.get);
-    s.read(fposition.size,sizeof(fposition.size));
+    s.read(fposition.pinm,sizeof(fposition.pinm));
     s.read(fposition.direction,sizeof(fposition.direction));
     
     s.read(fproperties,sizeof(fproperties));
@@ -187,7 +186,7 @@ procedure tgenf.store(var S: TStream);
     s.put(fposition.ducked);
     s.put(fposition.dying);
     s.put(fposition.alive);
-    s.write(fposition.size,sizeof(fposition.size));
+    s.write(fposition.pinm,sizeof(fposition.pinm));
     s.write(fposition.direction,sizeof(fposition.direction));
     s.write(fproperties,sizeof(fproperties));
  
@@ -307,7 +306,7 @@ procedure tgenf.kick(time:longint);
           l2y^.addcookie(new(pquadratic,init(time+150,time+300,-20/1000*150,0,-20/1000,0)));
           l2x^.addcookie(new(pquadratic,init(time+150,time+300, -3/1000*150,0, -3/1000,0)));
 
-          if (abs(closedist)<abs(1.3*size*direction*PinM)) and
+          if (abs(closedist)<abs(1.3*direction*PinM)) and
              (closest <> nil)
           then
             begin
@@ -330,7 +329,7 @@ procedure tgenf.punch(time:longint);
           a2x^.addcookie(new(pquadratic,init(time    ,time+150, 7/1000*150,0, 7/1000,0)));
           a2x^.addcookie(new(pquadratic,init(time+150,time+300,-7/1000*150,0,-7/1000,0)));
 
-          if (abs(closedist) < abs(1.2*size*direction*PinM)) and
+          if (abs(closedist) < abs(1.2*direction*PinM)) and
              (closest <> nil)
 
           then
@@ -349,11 +348,11 @@ procedure tgenf.jump(time:longint);
       with fposition do
         begin
           v := -4/1000*PinM;
-          a := 9.8/1000000*PinM;
-          t := round(-2*v/a);
+          a := 9.8/2/1000000*PinM;
+          t := round(-v/a);
           y^.addcookie(new(pquadratic,init(time+250,time+250+t,0,0,v,a)));
           jump^.setval(time+250+t,true,false);
-          duck^.addcookie(new(psine,init(time,time+500,0,-0.2,4*pi,0)));
+          duck^.addcookie(new(psine,init(time,time+500,0,-0.2,2*pi/500,0)));
         end;
   end;
 
@@ -361,12 +360,14 @@ procedure tgenf.duck(time:longint);
   begin
     if not fposition.ducked^.getval(time) then
       fposition.duck^.addcookie(new(pquadratic,init(time,time+300,-0.3,0,-1/1000,0)));
+    fposition.ducked^.setval(0,true,true);
   end;
 
 procedure tgenf.stopduck(time:longint);
   begin
     if fposition.ducked^.getval(time) then
       fposition.duck^.addcookie(new(pquadratic,init(time,time+300,0.3,0,1/1000,0)));
+    fposition.ducked^.setval(0,false,false);
   end;
 
 procedure tgenf.setkeys1;
@@ -431,11 +432,11 @@ procedure tgenf.look(d: real);
     fposition.direction := d;
   end;
 
-constructor tstickman.init(x,y,direction:integer; size: real;
+constructor tstickman.init(x,y,direction:integer; pinm: real;
             color:longint; maxhits: integer; lastkill:boolean;
             name: string);
   begin
-    tgenf.init(x,y,direction,size,color,maxhits,lastkill,name);
+    tgenf.init(x,y,direction,pinm,color,maxhits,lastkill,name);
     fproperties.ftype := f_stickman;
     resetpoints;
   end;
@@ -464,13 +465,13 @@ function tstickman.steplit:real;
 procedure tstickman.resetpoints;
   var x: integer;
   begin
-    dims.defl1     := round(0.5  * PinM  * fposition.size);
-    dims.defl2     := round(0.4  * PinM  * fposition.size);
-    dims.defa1     := round(0.3  * PinM  * fposition.size);
-    dims.defa2     := round(0.3  * PinM  * fposition.size);
-    dims.deftorso  := round(0.4  * PinM  * fposition.size);
-    dims.headw     := round(0.25 * PinM  * fposition.size);
-    dims.headh     := round(0.25 * PinM  * fposition.size);
+    dims.defl1     := round(0.5  * fposition.pinm);
+    dims.defl2     := round(0.4  * fposition.pinm);
+    dims.defa1     := round(0.3  * fposition.pinm);
+    dims.defa2     := round(0.3  * fposition.pinm);
+    dims.deftorso  := round(0.4  * fposition.pinm);
+    dims.headw     := round(0.25 * fposition.pinm);
+    dims.headh     := round(0.25 * fposition.pinm);
     dims.nose := 1.4;
 
     for x:= 0 to 30 do
@@ -618,7 +619,7 @@ ang := -acos((sqr(dims.defa2)-sqr(dims.defa1)-(sqr(t2x)+sqr(t2y)))/(2*dims.defa1
           end;
 
 t1x := fposition.x^.getval(time);                                    {Hdx}
-t1y := cty-dims.deftorso-fposition.head^.getval(time)*PinM*fposition.size/2;        {Hdy}
+t1y := cty-dims.deftorso-fposition.head^.getval(time)*fposition.pinm/2;        {Hdy}
 
 {-----------------------------------------------------------------------------}
 
