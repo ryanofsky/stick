@@ -2,7 +2,7 @@ unit dynvar;
 
 interface
 
-uses wobjects,win31;
+uses wobjects,win31,easygdi,easycrt;
 
 type pcookie = ^tcookie;
      tcookie = object(tobject)
@@ -92,13 +92,13 @@ destructor tcookie.done;
 function tcookie.getval(time:longint):real; 
   begin
     if (time<timestart) then getval := 0;
-    if (time>=timestart) and (time<timeend) then getval := evaluate(time);
+    if (time>=timestart) and (time<timeend) then getval := evaluate(time-timestart);
     if (time>=timeend) then getval := finalvalue;
   end;
 
 function tcookie.evaluate(time:longint):real;
   begin
-    evaluate := -1;
+    evaluate := 0;
   end;
 
 function tcookie.isexpired(time:longint):boolean;
@@ -177,7 +177,7 @@ function tsine.evaluate(time:longint):real;
 constructor tdynamicreal.init(initval:real);
   begin
     initialvalue := initval;
-    tcollection.init(1,1);
+    tcollection.init(0,1);
   end;
 
 constructor tdynamicreal.load(var S: TStream);
@@ -198,7 +198,6 @@ destructor tdynamicreal.done;
   end;
 
 procedure tdynamicreal.addcookie(cookie:pcookie);
-  var c: pcookie;
   begin
     insert(cookie);
   end;
@@ -208,19 +207,27 @@ function tdynamicreal.getval(time:longint):real;
       c: pcookie;
       i:integer;
   begin
+    i := 0;
+    while i<count do
+      begin
+        c := at(i);
+        if not c^.isexpired(time) then
+          inc(i)
+        else
+          begin
+            initialvalue := initialvalue + c^.getval(time);
+            delete(c);
+            dispose(c,done);
+          end;
+      end;
+
     s := 0;
     for i := 0 to count-1 do
       begin
         c := at(i);
-        if c^.isexpired(time) then
-          begin
-            initialvalue := initialvalue + c^.getval(time);
-            dispose(c,done);
-          end 
-        else
-          s := s + c^.getval(time);
+        s := s + c^.getval(time);
       end;  
-    pack;
+
     getval := initialvalue + s;
   end;
 
