@@ -8,7 +8,7 @@ uses wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,wincrt;
 const fps = 20;
       gamespeed = 0.9;
       PinM = 100;
-      path = 'C:\Russ\stick';
+      path = 'C:\Russ\easycrt';
       resetscores = false;
 
 {------------------------------------------------  Drawing Commands}
@@ -2495,6 +2495,7 @@ procedure twind.wmpaint(var msg: tmessage);
 
   procedure pause;
     begin
+      paused := true;
       setbrush(WindDC,color[7],-1,4);
       setpen(WindDC,color[0],0,2);
       box(WindDC,0,0,640,480,0,0);
