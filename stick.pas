@@ -8,12 +8,13 @@ uses easygdi, wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,win
 const fps = 20;
       gamespeed = 0.9;
       PinM = 100;
-      path = 'C:\Russ\scifair\samples\stick';
+{     path = 'C:\Russ\dev\scifair\code'; }
       resetscores = false;
 
 {------------------------------------------------  Drawing Commands}
 
 var  CrtWindow: Hwnd;
+var path: string;
 
 function atan(x,y:real): real;
   begin                                 
@@ -99,7 +100,7 @@ var
   WinDir      : array [0..145] of Char;
   filename    : pchar;
 begin
-  SetCurDir(path);
+  SetCurDir(pc(path));
   StrCopy(FullFileName, '');
   FillChar(Filter, SizeOf(Filter), #0);  { Set up for double null at end }
   StrCopy(Filter, 'Game Files');
@@ -132,7 +133,7 @@ var
   WinDir      : array [0..145] of Char;
   filename    : pchar;
 begin
-  SetCurDir(path);
+  SetCurDir(pc(path));
   StrCopy(FullFileName, '');
   FillChar(Filter, SizeOf(Filter), #0);  { Set up for double null at end }
   StrCopy(Filter, 'Game Files');
@@ -2156,6 +2157,18 @@ var myapp: tapp;
     thedc: hdc;
     x:integer;      
 begin
+
+{ Sets the path variable for files that need to be loaded }
+  path := getapppath(hinstance);
+  for x := length(path) downto 1 do
+    if (path[x]='\') then
+        begin
+          path := copy(path,1,x-1);
+          x:=1;
+        end; 
+{writeln(path);}
+
+
   myapp.init('Appname');
   myapp.run;
   myapp.done;
