@@ -1,5 +1,5 @@
 program whothehellcares;
-uses wobjects, winprocs, wintypes,strings;
+uses wobjects, winprocs, wintypes,strings, wincrt;
 
 {$R stick.res}
 
@@ -22,6 +22,7 @@ var DC:HDC;
     OldFont: HFont;
     PrpFont: TLogFont;
     ink: word;
+    CrtWindow: Hwnd;
 
 const
   color: array[-1..15] of longint = (
@@ -157,12 +158,232 @@ var x1,y1,x2,y2,x3,y3,x4,y4,c,d:integer;
     end;
   end;
 
-procedure unfreeze(Wnd: Hwnd);
-var M: TMsg;
-  begin  
-    while PeekMessage(M, Wnd, 0, 0, pm_Remove) do
+var BitMapHandle: HBitmap;
+    IconizedBits: HBitmap;
+    IconImageValid: Boolean;
+    Stretch: Boolean;
+    Width, Height: LongInt;
+procedure AHIncr; far; external 'KERNEL' index 114;
+procedure GetBitmapData(var TheFile: File;
+  BitsHandle: THandle; BitsByteSize: Longint);
+type
+  LongType = record
+    case Word of
+      0: (Ptr: Pointer);
+      1: (Long: Longint);
+      2: (Lo: Word;
+	  Hi: Word);
+  end;
+var
+  Count: Longint;
+  Start, ToAddr, Bits: LongType;
+begin
+  Start.Long := 0;
+  Bits.Ptr := GlobalLock(BitsHandle);
+  Count := BitsByteSize - Start.Long;
+  while Count > 0 do
+  begin
+    ToAddr.Hi := Bits.Hi + (Start.Hi * Ofs(AHIncr));
+    ToAddr.Lo := Start.Lo;
+    if Count > $4000 then Count := $4000;
+    BlockRead(TheFile, ToAddr.Ptr^, Count);
+    Start.Long := Start.Long + Count;
+    Count := BitsByteSize - Start.Long;
+  end;
+  GlobalUnlock(BitsHandle);
+end;
+function OpenDIB(var TheFile: File): Boolean;
+var
+  bitCount: Word;
+  size: Word;
+  longWidth: Longint;
+  DCHandle: HDC;
+  BitsPtr: Pointer;
+  BitmapInfo: PBitmapInfo;
+  BitsHandle, NewBitmapHandle: THandle;
+  NewPixelWidth, NewPixelHeight: Word;
+begin
+  OpenDIB := True;
+  Seek(TheFile, 28);
+  BlockRead(TheFile, bitCount, SizeOf(bitCount));
+  if bitCount <= 8 then
+  begin
+    size := SizeOf(TBitmapInfoHeader) + ((1 shl bitCount) * SizeOf(TRGBQuad));
+    BitmapInfo := MemAlloc(size);
+    Seek(TheFile, SizeOf(TBitmapFileHeader));
+    BlockRead(TheFile, BitmapInfo^, size);
+    NewPixelWidth := BitmapInfo^.bmiHeader.biWidth;
+    NewPixelHeight := BitmapInfo^.bmiHeader.biHeight;
+    longWidth := (((NewPixelWidth * bitCount) + 31) div 32) * 4;
+    BitmapInfo^.bmiHeader.biSizeImage := longWidth * NewPixelHeight;
+    GlobalCompact(-1);
+    BitsHandle := GlobalAlloc(gmem_Moveable or gmem_Zeroinit,
+      BitmapInfo^.bmiHeader.biSizeImage);
+    GetBitmapData(TheFile, BitsHandle, BitmapInfo^.bmiHeader.biSizeImage);
+    DCHandle := CreateDC('Display', nil, nil, nil);
+    BitsPtr := GlobalLock(BitsHandle);
+    NewBitmapHandle :=
+      CreateDIBitmap(DCHandle, BitmapInfo^.bmiHeader, cbm_Init, BitsPtr,
+      BitmapInfo^, 0);
+    DeleteDC(DCHandle);
+    GlobalUnlock(BitsHandle);
+    GlobalFree(BitsHandle);
+    FreeMem(BitmapInfo, size);
+    if NewBitmapHandle <> 0 then
     begin
-      DispatchMessage(M);
+      if BitmapHandle <> 0 then DeleteObject(BitmapHandle);
+      BitmapHandle := NewBitmapHandle;
+      Width := NewPixelWidth;
+      Height := NewPixelHeight;
+    end
+    else
+      OpenDIB := False;
+  end
+  else
+    OpenDIB := False;
+end;
+function LoadBitmapFile(Name: PChar): Boolean;
+var
+  TheFile: File;
+  TestWin30Bitmap: Longint;
+  MemDC: HDC;
+begin
+  LoadBitmapFile := False;
+  Assign(TheFile, Name);
+  Reset(TheFile, 1);
+  Seek(TheFile, 14);
+  BlockRead(TheFile, TestWin30Bitmap, SizeOf(TestWin30Bitmap));
+  if TestWin30Bitmap = 40 then
+    if OpenDIB(TheFile) then
+    begin
+      LoadBitmapFile := True;
+      IconImageValid := False;
+    end
+    else
+      MessageBox(0, 'EASYCRT:  Unable to create Windows 3.0 bitmap from file.',
+	Name, mb_Ok)
+  else
+      MessageBox(0, 'EASYCRT:  Not a Windows 3.0 bitmap file.  Convert using Paintbrush.', Name, mb_Ok);
+  Close(TheFile);
+end;
+procedure Paint(PaintDC:HDC;  xpos,ypos,wth,ht:integer; Rop:longint; var PaintInfo: TPaintStruct);
+var
+  MemDC: HDC;
+  OldBitmap: HBitmap;
+  R: TRect;
+  Info:tbitmap;
+begin
+  getobject(BitMapHandle,10,@info);
+  width:=info.bmwidth;
+  height:=info.bmheight;
+  if BitMapHandle <> 0 then
+  begin
+    MemDC := CreateCompatibleDC(PaintDC);
+      SelectObject(MemDC, BitMapHandle);
+      if Stretch then
+        begin
+          GetClientRect(CrtWindow, R);
+   	  SetCursor(LoadCursor(0, idc_Wait));
+          SetStretchBltMode(PaintDC,3);
+          StretchBlt(PaintDC, xpos, ypos, wth, ht, MemDC, 0, 0,
+	    width, Height, Rop);  
+	  SetCursor(LoadCursor(0, idc_Arrow));
+        end
+      else
+        begin
+          if wth <> 0 then width  := wth;
+          if ht  <> 0 then height := ht;
+	  BitBlt(PaintDC, xpos, ypos, Width, Height, MemDC, 0, 0, Rop);
+        end;
+    DeleteDC(MemDC);
+  end;
+end;
+
+procedure drawpicture(DC:HDC; x,y:integer; filename:string);
+var info:tpaintstruct;
+begin
+  IconImageValid := False;
+  Stretch := False;
+  loadbitmapfile(pc(filename));
+  Paint(DC,x,y,0,0,srccopy,info);
+  deleteobject(BitMapHandle);
+end;
+
+function loadbmp(filename:string):BMP;
+begin
+  bitmaphandle:=0;
+  IconImageValid := False;
+  Stretch := False;
+  loadbitmapfile(pc(filename));
+  loadbmp:=BitMapHandle;  
+  bitmaphandle:=0;
+end;
+
+procedure drawbmp(x,y: integer;  bmpname: bmp;  stretched,width,height:integer);
+var info:tpaintstruct;
+  begin
+    IconImageValid := False;
+    if stretched=0 then Stretch := False else stretch:=True;
+    bitmaphandle:=bmpname;
+    Paint(DC,x,y,width,height,srccopy,info);
+  end;
+
+procedure deletebmp(var thebmp:bmp);
+begin
+  deleteobject(thebmp);
+  deleteobject(BitMapHandle);
+end;
+
+procedure maskbmp(x,y: integer;  themask,thepic: bmp;  stretched,wth,ht:integer);
+var memdc,tempdc: HDC;
+    Infob:tbitmap;
+    info:tpaintstruct;
+    dwidth,dheight,rwidth,rheight:integer;
+  begin
+    IconImageValid := False;
+    if stretched=0 then Stretch := False else stretch:=True;
+    getobject(thepic,10,@infob); rwidth:=infob.bmwidth; rheight:=infob.bmheight;
+    if wth <> 0 then dwidth  := wth else dwidth  :=rwidth;
+    if ht  <> 0 then dheight := ht  else dheight :=rheight;;
+    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,dstinvert,info);   
+    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,srcpaint,info);  
+    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,dstinvert,info);  
+    tempdc:=createcompatibledc(DC);    Selectobject(tempdc, thepic);
+    memdc:=createcompatibledc(tempDC); SelectObject(memdc, thepic);
+    BitBlt(tempDC,0,0,rWidth,rHeight, MemDC, 0, 0, srccopy);
+    deletedc(memdc);
+    memdc:=createcompatibledc(tempDC); SelectObject(memdc, themask);
+    BitBlt(tempDC,0,0,rWidth,rHeight, MemDC, 0, 0, srcand);
+    deletedc(memdc);
+    StretchBlt(DC,X,Y,DWidth,DHeight,tempDC,0,0,RWidth,RHeight,srcpaint);
+    deletedc(tempdc); 
+  end;
+
+function getwidth(thebmp:bmp):integer;
+var Infob:tbitmap;
+  begin
+    getobject(thebmp,10,@infob);
+    getwidth:=infob.bmwidth;
+  end;
+
+
+function getheight(thebmp:bmp):integer;
+var Infob:tbitmap;
+  begin
+    getobject(thebmp,10,@infob);
+    getheight:=infob.bmheight;
+  end;
+
+procedure unfreeze(Wnd: Hwnd);
+var Msg: TMsg;
+  begin  
+    while PeekMessage(Msg, Wnd, 0, 0, pm_Remove) do
+    begin
+(*  Experimental--                                                       *)
+      if Msg.Message = WM_QUIT then begin Application^.Done; halt; end;
+      TranslateMessage(Msg);
+(*  --Experimental                                                       *)
+      DispatchMessage(Msg);
     end;
   end;
 
@@ -283,6 +504,7 @@ const fps = 10;
       fframes = round(2*fps/gamespeed+1);
 
       PinM = 150;
+      path = 'C:\Russ\stick';
 
 type tkeys = record
        left,right,up,down,punch,kick:word
@@ -313,6 +535,7 @@ type pgenf = ^tgenf;
        procedure jump; virtual;
        procedure duck; virtual;
        procedure setkeys1; virtual;
+       procedure setdc(it: Hdc); virtual;
      end;
 
 constructor tgenf.init(TheDC:HDC; TheWind: Hwnd; xpos,ypos, dir: integer; sze:real);
@@ -347,6 +570,11 @@ constructor tgenf.init(TheDC:HDC; TheWind: Hwnd; xpos,ypos, dir: integer; sze:re
 
 destructor tgenf.done;
   begin
+  end;
+
+procedure tgenf.setdc(it: Hdc);
+  begin
+    DC:=it;
   end;
 
 procedure tgenf.subinit;
@@ -526,9 +754,7 @@ procedure tstickman.draw;
     qarc(DC,HDX+round(direction*headw),HDy,
             round(direction*headw*1),10,190,260,0);
      }
-   
       end;
-
     setfont(DC,'Arial',15,9,0,0,0,0);
     str(t2x:0:0,temp);
     txt(DC,10,250+10,1,color[15],'t2x   '+temp);
@@ -540,8 +766,6 @@ procedure tstickman.draw;
     txt(DC,10,250+70,1,color[15],'k1x   '+temp);
     str(k1y:0,temp);
     txt(DC,10,250+90,1,color[15],'k1y   '+temp);
-
-
   end;
 
 procedure tstickman.subinit;
@@ -585,12 +809,13 @@ destructor tfpool.done;
 
 type pwind = ^twind;
      twind = object(twindow)
-       WindDC: HDC;
+       winddc,usedc,MemDC: HDC;
        mode: string;
        first: boolean;
        ldown,rdown:boolean;
        fpool: pfpool;
        curfighter: pgenf;
+       blank: HBitmap;
        constructor init(AParent: PWindowsObject; ATitle: PChar);
        procedure WMLButtonDown(var Msg: TMessage);  virtual wm_First + wm_LButtonDown;
        procedure WMRButtonDown(var Msg: TMessage);  virtual wm_First + wm_RButtonDown;
@@ -599,6 +824,9 @@ type pwind = ^twind;
        procedure WMKeyDown(var Msg:Tmessage); virtual wm_First + wm_Keydown;
        procedure WMPaint(var Msg: Tmessage);        virtual wm_First + wm_Paint;
        procedure GetWindowClass( var WC: TWndClass); virtual;
+       procedure wmsetfocus(var Msg: Tmessage); virtual wm_First + wm_setfocus;
+       procedure wmkillfocus(var Msg: Tmessage); virtual wm_First + wm_killfocus;
+       procedure givedc(Gift: HDC); virtual;
        destructor Done; virtual;
      end;
 
@@ -614,10 +842,12 @@ constructor twind.Init(AParent: PWindowsObject; ATitle: PChar);
         y:=0;
         w:=640;
         h:=480;
+        first:=TRUE;
+{        MemDC  := CreateCompatibleDC(usedc);
+        blank := loadbmp(path+'\blank.bmp');
+        selectobject(MemDC,blank);
+ }       fpool:=new(pfpool,init(1,1));
       end;
-    WindDC := GetDC(HWindow);
-    first:=TRUE;
-    fpool:=new(pfpool,init(1,1));
   end;
 
 procedure TWind.GetWindowClass( var WC: TWndClass);
@@ -630,9 +860,37 @@ destructor twind.done;
   begin
     releasecapture;
     dispose(fpool,done);
-    ReleaseDC(HWindow, WindDC);
+    deleteDC(MemDC);
+    deletebmp(blank);
+    ReleaseDC(HWindow, usedc);
     twindow.done;
   end;
+
+procedure twind.wmsetfocus(var Msg: Tmessage);
+  begin
+    defwndproc(msg);
+    winddc := GetDC(HWindow);
+    usedc:=winddc;
+    GiveDC(UseDC);
+  end;
+
+procedure twind.wmkillfocus(var Msg: Tmessage);
+  begin
+    releaseDC(Hwindow,winddc);
+    defwndproc(msg);
+  end;
+
+procedure twind.givedc(Gift: HDC); 
+  var x:integer;
+      f:pgenf;
+  begin
+    for x:= 0 to fpool^.count-1 do
+      begin
+        f:=fpool^.at(x);
+        f^.setdc(Gift);
+      end;
+  end;
+
 
 procedure TWind.WMLButtonDown(var Msg: TMessage);
   var S: array[0..9] of Char;
@@ -642,8 +900,8 @@ procedure TWind.WMLButtonDown(var Msg: TMessage);
     ldown:=true;
     if (mode='intro') or (mode='menu') or (mode='test') then
       begin
-        setpen(windDC,color[4],0,0);
-        qcircle(windDC,Msg.LParamLo+attr.X, Msg.LParamHi+attr.Y,10,10);
+        setpen(usedc,color[4],0,0);
+        qcircle(usedc,Msg.LParamLo+attr.X, Msg.LParamHi+attr.Y,10,10);
       end;
   end;
 
@@ -695,7 +953,7 @@ procedure twind.wmpaint(var msg: tmessage);
   procedure intro;
     begin
       mode:='intro';
-      txt(windDC,100,200,1,color[14],'Introduction Here');
+      txt(usedc,100,200,1,color[14],'Introduction Here');
     end;
 
    procedure menu;
@@ -713,7 +971,7 @@ procedure twind.wmpaint(var msg: tmessage);
       mode:='fight';
       repeat
         startdelay(timer);
-        setbrush(WindDC,0,0,0);  box(WindDC,0,0,640,480,0,0);
+        setbrush(usedc,0,0,0);  box(usedc,0,0,640,480,0,0);
         for x:=0 to fpool^.count-1 do
           begin
             if not fpool^.alive then exit;
@@ -722,14 +980,16 @@ procedure twind.wmpaint(var msg: tmessage);
               begin
                 unfreeze(HWindow);
                 draw;
-                setbrush(winddc,color[integer(flip)*15],0,0);
-                box(winddc,0,0,30,30,0,0);
+                setbrush(UseDC,color[integer(flip)*15],0,0);
+                box(UseDC,0,0,30,30,0,0);
                 flip:=not flip;
                 advanceframe;
               end;
           end;
-         finishdelay(1000 div fps,timer, Hwindow); 
-         if not fpool^.alive then fin:=1;
+          writeln(  winddc,',',memdc,',',
+                    bitblt(WindDC,0,0,640,480,MemDC,0,0,Srccopy)); 
+          finishdelay(1000 div fps,timer, Hwindow); 
+          if not fpool^.alive then fin:=1;
       until fin=1;
      end;
 
@@ -738,12 +998,12 @@ procedure twind.wmpaint(var msg: tmessage);
      if first then
       begin
         first:=false;
-        setbrush(WindDC,0,0,0);
-        box(WindDC,0+attr.x,0+attr.y,640+attr.x,480+attr.y,0,0);
-        setbrush(WindDC,0,color[15],0);
+        setbrush(usedc,0,0,0);
+        box(usedc,0+attr.x,0+attr.y,640+attr.x,480+attr.y,0,0);
+        setbrush(usedc,0,color[15],0);
         intro;
         menu;
-        fpool^.insert(new(pstickman,init(WindDC,Hwindow,300,300,1,0.5)));
+        fpool^.insert(new(pstickman,init(usedc,Hwindow,300,300,1,0.5)));
         curfighter:=fpool^.at(0);
         curfighter^.setkeys1;
         curfighter^.draw;
