@@ -1,5 +1,5 @@
 program whothehellcares;
-uses wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,wincrt;
+uses easygdi, wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,wincrt;
 
 {$R stick.res}
 
@@ -8,556 +8,12 @@ uses wobjects, winprocs, wintypes,strings,commdlg, windos, mmsystem,wincrt;
 const fps = 20;
       gamespeed = 0.9;
       PinM = 100;
-      path = 'C:\Russ\easycrt';
+      path = 'C:\Russ\scifair\samples\stick';
       resetscores = false;
 
 {------------------------------------------------  Drawing Commands}
 
 var  CrtWindow: Hwnd;
-
-const
-  color: array[-1..15] of longint = (
-      -1                              ,   {color -1 Transparent   }
-      0 + (256 *   0) + (65536 *   0) ,   {color 0  Black         }
-      0 + (256 *   0) + (65536 * 170) ,   {color 1  Blue          }
-      0 + (256 * 170) + (65536 *   0) ,   {color 2  Green         }
-      0 + (256 * 170) + (65536 * 170) ,   {color 3  Cyan          }
-    170 + (256 *   0) + (65536 *   0) ,   {color 4  Red           }
-    170 + (256 *   0) + (65536 * 170) ,   {color 5  Magenta       }
-    170 + (256 *  85) + (65536 *   0) ,   {color 6  Brown         }
-    170 + (256 * 170) + (65536 * 170) ,   {color 7  White         }
-     85 + (256 *  85) + (65536 *  85) ,   {color 8  Gray          }
-     85 + (256 *  85) + (65536 * 255) ,   {color 9  Light Blue    }
-     85 + (256 * 255) + (65536 *  85) ,   {color 10 Light Green   }  
-     85 + (256 * 255) + (65536 * 255) ,   {color 11 Light Cyan    }
-    255 + (256 *  85) + (65536 *  85) ,   {color 12 Light Red     }
-    255 + (256 *  85) + (65536 * 255) ,   {color 13 Light Magenta }
-    255 + (256 * 255) + (65536 *  85) ,   {color 14 Yellow        }
-    255 + (256 * 255) + (65536 * 255) );  {color 15 Bright White  }
-
-type SDC = ^StdDC;
-     StdDC = record
-       handle: HDC;
-       ThePen, OldPen, NewPen: Hpen;
-       TheBrush, OldBrush, NewBrush: HBrush;
-       TheRegion, OldRegion, NewRegion: HRgn;
-       TheBMP, OldBMP, NewBMP: HBitmap;
-       TheFont, OldFont, NewFont: HFont;
-       From: Thandle;
-       Kind: Word;
-       prpfont: tlogfont;
-     end;
-
-type HDC = THandle;
-     BMP = THandle;
-     Points = record
-       x: Integer;
-       y: Integer;
-     end;
-
-function makeDC(FromWhat:Thandle; Form:Word):SDC;
-  var bob: sdc;
-  begin
-    bob:=new(SDC);
-    with bob^ do
-      begin
-        if form=0 then handle:=getDC(fromwhat);
-        if form=1 then handle:=createcompatibleDC(Fromwhat);
-        Oldpen    :=  0;
-        OldBrush  :=  0;
-        OldRegion :=  0;
-        OldBMP    :=  0;
-        OldFont   :=  0;
-        From      :=  Fromwhat;
-        Kind      :=  Form;
-      end;
-    makeDC:=bob;
-  end;
-
-procedure killDC(var it: SDC);
-  begin
-    if it <> nil then
-    with it^ do
-      begin
-        thepen:=selectobject(handle,oldpen);
-        deleteobject(ThePen);
-        thebrush:=selectobject(handle,oldbrush);
-        deleteobject(TheBrush);
-        thefont:=selectobject(handle,oldfont);
-        deleteobject(Thefont);
-        thebmp:=selectobject(handle,oldbmp);
-        deleteobject(thebmp);
-        if kind=0 then releaseDC(from,handle);
-        if kind=1 then deleteDC(handle);
-      end;
-    if it<>nil then dispose(it);
-    it := nil;
-  end;
-
-procedure setbmp(DC: SDC; Picture: BMP);
-  begin
-    if (DC <> nil) and (picture>0) then
-    with DC^ do begin
-      thebmp:=selectobject(handle,picture);
-      if oldbmp=0 then oldbmp:=thebmp else deleteobject(thebmp);
-    end;
-  end;
-
-procedure setpen(DC:SDC; color: longint; linestyle, width: integer);
-  begin
-    if DC<>nil then
-    with DC^ do
-      begin
-        if color <> -1 then
-          NewPen := CreatePen(linestyle, width, color)
-        else
-          NewPen := CreatePen(PS_NULL,width,0);
-        thepen:=selectobject(handle,NewPen);
-        if oldpen=0 then oldpen:=thepen else deleteobject(thepen);
-        end;
-  end;
-
-procedure setbrush(DC:SDC; color,bcolor:longint; style: integer);
-var brushstyle: tlogbrush;
-  begin
-    if DC<> nil then
-    with DC^ do
-      begin
-        if bcolor < 0 then
-          setbkmode(handle,1)
-        else 
-          begin
-            setbkmode(handle,2);
-            setbkcolor(handle,bcolor);
-          end;
-
-        if color < 0 then
-          begin
-            brushstyle.lbstyle:=BS_HOLLOW;
-            newbrush:=CreateBrushIndirect(brushstyle);
-          end
-        else
-          if style=0 then
-            begin
-              brushstyle.lbstyle:=BS_SOLID;
-              brushstyle.lbcolor:=color;
-              newbrush:=CreateBrushIndirect(brushstyle);
-            end
-          else
-            newbrush:=createhatchbrush(style-1,color);;;
-        thebrush:=selectobject(handle,NewBrush);
-        if oldbrush=0 then oldbrush:=thebrush else deleteobject(thebrush);
-      end;
-  end;
-
-function pc(st: string): pchar;
-  var p: array[0..1024] of char;
-  begin
-    strpcopy(p,st);
-    pc := @p;
-  end;  
-
-procedure setfont(DC:SDC; fontface:string; size,weight,italic,underline,strikeout:integer;angle:real );
-  begin
-    if DC<>nil then
-    with DC^.prpfont do
-      begin
-        lfHeight         := -1*size;
-        lfWidth          := 0;
-        lfEscapement     := round(angle*10);
-        lfWeight         := weight*100;
-        lfItalic         := byte(italic);
-        lfUnderline      := byte(underline);
-        lfStrikeout      := byte(strikeout);
-{       lfcharset }
-{       lfOutprecision   := OUT_TT_PRECIS; }
-        lfQuality        := PROOF_QUALITY;
-        lfPitchAndFamily := DEFAULT_PITCH or FF_DONTCARE;
-        StrCopy(lfFaceName,pc(fontface));
-      end;
-  end;
-
-function getlng(DC:SDC; text:string):longint;
-  var p:pchar;
-  begin
-    if dc<>nil then
-    with DC^ do
-      begin
-        newfont:=createfontindirect(prpfont);
-        thefont:=selectobject(handle,Newfont);
-        if oldfont=0 then oldfont:=thefont else deleteobject(thefont);
-        p:=pc(text);
-        getlng:=loword(GetTextExtent(handle,p,strlen(p)));
-      end;
-  end;
-
-procedure txt(DC: SDC; x,y,align:integer; color:longint; text:string);
-var aln,lng:integer;
-    p: pchar;
-  begin
-    if dc<>nil then
-    with DC^ do
-      begin
-        newfont:=createfontindirect(prpfont);
-        thefont:=selectobject(handle,Newfont);
-        if oldfont=0 then oldfont:=thefont else deleteobject(thefont);
-      end;
-    if dc<>nil then
-    with DC^ do
-      begin
-        case align of
-          1: aln:=TA_LEFT;
-          2: aln:=TA_RIGHT;
-          3: aln:=TA_CENTER;
-        end;
-        settextalign(handle,aln);
-        settextcolor(handle,color);
-        lng:=setbkmode(handle,1);
-        p:=pc(text);
-        textout(handle,x,y,p,strlen(p));
-        setbkmode(handle,lng);
-      end;
-  end;
-
-procedure box(DC:SDC; x1,y1,x2,y2,x3,y3:integer);
-  begin
-    if dc<>nil then
-    roundrect(DC^.handle,x1,y1,x2,y2,x3,y3);
-  end;
-
-procedure qcircle(DC:SDC; xpos,ypos,radiusw,radiush:integer);
-var x1,y1,x2,y2,c,d:integer;
-  begin
-    x1:=xpos-radiusw;  y1:=ypos-radiush;  x2:=xpos+radiusw;  y2:=ypos+radiush;
-    if dc<>nil then
-    Ellipse(DC^.handle, X1,Y1,X2,Y2);
-  end;
-
-procedure qline(DC: SDC; x1,y1,x2,y2:integer);
-var ends:array[1..2] of tpoint;
-  begin
-    ends[1].x:=x1;  ends[1].y:=y1;  ends[2].x:=x2;  ends[2].y:=y2;
-    if dc<>nil then
-    polyline(DC^.handle,ends,2);
-  end;
-
-procedure Qarc(DC: SDC; xpos,ypos,radiusw,radiush,angle1,angle2,way:integer);
-var x1,y1,x2,y2,x3,y3,x4,y4,c,d:integer;
-  begin
-    x1:=xpos-radiusw;  y1:=ypos-radiush;  x2:=xpos+radiusw;  y2:=ypos+radiush;
-    x3:=xpos+round(radiusw*(cos(angle1/180*pi))); y3:=ypos-round(radiush*(sin(angle1/180*pi)));
-    x4:=xpos+round(radiusw*(cos(angle2/180*pi))); y4:=ypos-round(radiush*(sin(angle2/180*pi)));
-    if dc<>nil then
-    case way of
-      0: arc(DC^.handle, X1,Y1,X2,Y2,X3,Y3,X4,Y4);
-      1: chord(DC^.handle, X1,Y1,X2,Y2,X3,Y3,X4,Y4);
-      2: pie(DC^.handle, X1,Y1,X2,Y2,X3,Y3,X4,Y4);
-    end;
-  end;
-
-function getred(color:longint):integer;
-var red,green,blue: integer;
-  begin
-    blue:=color div 65536;
-    green:=(color-blue*65536) div 256;
-    red:=color-65536*blue-256*green;
-    getred:=red;       
-  end;
-
-function getgreen(color:longint):integer;
-var red,green,blue: integer;
-  begin
-    blue:=color div 65536;
-    green:=(color-blue*65536) div 256;
-    red:=color-65536*blue-256*green;
-    getgreen:=green;       
-  end;
-
-function getblue(color:longint):integer;
-var red,green,blue: integer;
-  begin
-    blue:=color div 65536;
-    green:=(color-blue*65536) div 256;
-    red:=color-65536*blue-256*green; 
-    getblue:=blue;       
-  end;
-
-function gradient(color1,color2:longint; stepno,steps:integer):longint;
-var red,green,blue: integer;
-  begin
-    red   := round(stepno/steps*(  getred(color2) -   getred(color1)) +   getred(color1));
-    green := round(stepno/steps*(getgreen(color2) - getgreen(color1)) + getgreen(color1));
-    blue  := round(stepno/steps*( getblue(color2) -  getblue(color1)) +  getblue(color1));
-    gradient:=rgb(red,green,blue);
-  end;
-
-(* ------------     Bitmap Routines    -------------- *)
-
-
-  var BitMapHandle: HBitmap;
-    IconizedBits: HBitmap;
-    IconImageValid: Boolean;
-    Stretch: Boolean;
-    Width, Height: LongInt;
-procedure AHIncr; far; external 'KERNEL' index 114;
-procedure GetBitmapData(var TheFile: File;
-  BitsHandle: THandle; BitsByteSize: Longint);
-type
-  LongType = record
-    case Word of
-      0: (Ptr: Pointer);
-      1: (Long: Longint);
-      2: (Lo: Word;
-	  Hi: Word);
-  end;
-var
-  Count: Longint;
-  Start, ToAddr, Bits: LongType;
-begin
-  Start.Long := 0;
-  Bits.Ptr := GlobalLock(BitsHandle);
-  Count := BitsByteSize - Start.Long;
-  while Count > 0 do
-  begin
-    ToAddr.Hi := Bits.Hi + (Start.Hi * Ofs(AHIncr));
-    ToAddr.Lo := Start.Lo;
-    if Count > $4000 then Count := $4000;
-    BlockRead(TheFile, ToAddr.Ptr^, Count);
-    Start.Long := Start.Long + Count;
-    Count := BitsByteSize - Start.Long;
-  end;
-  GlobalUnlock(BitsHandle);
-end;
-function OpenDIB(var TheFile: File): Boolean;
-var
-  bitCount: Word;
-  size: Word;
-  longWidth: Longint;
-  DCHandle: HDC;
-  BitsPtr: Pointer;
-  BitmapInfo: PBitmapInfo;
-  BitsHandle, NewBitmapHandle: THandle;
-  NewPixelWidth, NewPixelHeight: Word;
-begin
-  OpenDIB := True;
-  Seek(TheFile, 28);
-  BlockRead(TheFile, bitCount, SizeOf(bitCount));
-  if bitCount <= 8 then
-  begin
-    size := SizeOf(TBitmapInfoHeader) + ((1 shl bitCount) * SizeOf(TRGBQuad));
-    BitmapInfo := MemAlloc(size);
-    Seek(TheFile, SizeOf(TBitmapFileHeader));
-    BlockRead(TheFile, BitmapInfo^, size);
-    NewPixelWidth := BitmapInfo^.bmiHeader.biWidth;
-    NewPixelHeight := BitmapInfo^.bmiHeader.biHeight;
-    longWidth := (((NewPixelWidth * bitCount) + 31) div 32) * 4;
-    BitmapInfo^.bmiHeader.biSizeImage := longWidth * NewPixelHeight;
-    GlobalCompact(-1);
-    BitsHandle := GlobalAlloc(gmem_Moveable or gmem_Zeroinit,
-      BitmapInfo^.bmiHeader.biSizeImage);
-    GetBitmapData(TheFile, BitsHandle, BitmapInfo^.bmiHeader.biSizeImage);
-    DCHandle := CreateDC('Display', nil, nil, nil);
-    BitsPtr := GlobalLock(BitsHandle);
-    NewBitmapHandle :=
-      CreateDIBitmap(DCHandle, BitmapInfo^.bmiHeader, cbm_Init, BitsPtr,
-      BitmapInfo^, 0);
-    DeleteDC(DCHandle);
-    GlobalUnlock(BitsHandle);
-    GlobalFree(BitsHandle);
-    FreeMem(BitmapInfo, size);
-    if NewBitmapHandle <> 0 then
-    begin
-      if BitmapHandle <> 0 then DeleteObject(BitmapHandle);
-      BitmapHandle := NewBitmapHandle;
-      Width := NewPixelWidth;
-      Height := NewPixelHeight;
-    end
-    else
-      OpenDIB := False;
-  end
-  else
-    OpenDIB := False;
-end;
-
-function LoadBitmapFile(Name: PChar): Boolean;
-var
-  TheFile: File;
-  TestWin30Bitmap: Longint;
-  MemDC: HDC;
-begin
-  LoadBitmapFile := False;
-  Assign(TheFile, Name);
-  Reset(TheFile, 1);
-  Seek(TheFile, 14);
-  BlockRead(TheFile, TestWin30Bitmap, SizeOf(TestWin30Bitmap));
-  if TestWin30Bitmap = 40 then
-    if OpenDIB(TheFile) then
-    begin
-      LoadBitmapFile := True;
-      IconImageValid := False;
-    end
-    else
-      MessageBox(0, 'EASYCRT:  Unable to create Windows 3.0 bitmap from file.',
-	Name, mb_Ok)
-  else
-      MessageBox(0, 'EASYCRT:  Not a Windows 3.0 bitmap file.  Convert using Paintbrush.', Name, mb_Ok);
-  Close(TheFile);
-end;
-
-function loadbmp(filename:string):BMP;
-begin
-  bitmaphandle:=0;
-  IconImageValid := False;
-  Stretch := False;
-  loadbitmapfile(pc(filename));
-  loadbmp:=BitMapHandle;  
-  bitmaphandle:=0;
-end;
-
-procedure Paint(PaintDC:HDC;  xpos,ypos,wth,ht:integer; Rop:longint; var PaintInfo: TPaintStruct);
-var
-  MemDC: HDC;
-  OldBitmap: HBitmap;
-  R: TRect;
-  Info:tbitmap;
-begin
-  getobject(BitMapHandle,10,@info);
-  width:=info.bmwidth;
-  height:=info.bmheight;
-  if BitMapHandle <> 0 then
-  begin
-    MemDC := CreateCompatibleDC(PaintDC);
-      SelectObject(MemDC, BitMapHandle);
-      if Stretch then
-        begin
-          GetClientRect(CrtWindow, R);
-   	  SetCursor(LoadCursor(0, idc_Wait));
-          SetStretchBltMode(PaintDC,3);
-          StretchBlt(PaintDC, xpos, ypos, wth, ht, MemDC, 0, 0,
-	    width, Height, Rop);  
-	  SetCursor(LoadCursor(0, idc_Arrow));
-        end
-      else
-        begin
-          if wth <> 0 then width  := wth;
-          if ht  <> 0 then height := ht;
-	  BitBlt(PaintDC, xpos, ypos, Width, Height, MemDC, 0, 0, Rop);
-        end;
-    DeleteDC(MemDC);
-  end;
-end;
-
-procedure drawbmp(DC: SDC; x,y: integer;  bmpname: bmp;  stretched,width,height:integer);
-var info:tpaintstruct;
-  begin
-    IconImageValid := False;
-    if stretched=0 then Stretch := False else stretch:=True;
-    bitmaphandle:=bmpname;
-    if dc<>nil then
-    Paint(DC^.handle,x,y,width,height,srccopy,info);
-  end;
-
-procedure deletebmp(var thebmp:bmp);
-begin
-  deleteobject(thebmp);
-  deleteobject(BitMapHandle);
-end;
-
-procedure maskbmp(DvC:SDC; x,y: integer;  themask,thepic: bmp;  stretched,wth,ht:integer);
-var memdc,tempdc: HDC;
-    Infob:tbitmap;
-    info:tpaintstruct;
-    dwidth,dheight,rwidth,rheight:integer;
-    DC:HDC;
-  begin
-    DC:=DvC^.handle;
-    IconImageValid := False;
-    if stretched=0 then Stretch := False else stretch:=True;
-    getobject(thepic,10,@infob); rwidth:=infob.bmwidth; rheight:=infob.bmheight;
-    if wth <> 0 then dwidth  := wth else dwidth  :=rwidth;
-    if ht  <> 0 then dheight := ht  else dheight :=rheight;;
-    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,dstinvert,info);   
-    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,srcpaint,info);  
-    bitmaphandle:=themask; paint(DC,x,y,dwidth,dheight,dstinvert,info);  
-    tempdc:=createcompatibledc(DC);    Selectobject(tempdc, thepic);
-    memdc:=createcompatibledc(tempDC); SelectObject(memdc, thepic);
-    BitBlt(tempDC,0,0,rWidth,rHeight, MemDC, 0, 0, srccopy);
-    deletedc(memdc);
-    memdc:=createcompatibledc(tempDC); SelectObject(memdc, themask);
-    BitBlt(tempDC,0,0,rWidth,rHeight, MemDC, 0, 0, srcand);
-    deletedc(memdc);
-    StretchBlt(DC,X,Y,DWidth,DHeight,tempDC,0,0,RWidth,RHeight,srcpaint);
-    deletedc(tempdc); 
-  end;
-
-procedure drawpicture(DC:HDC; x,y:integer; filename:string);
-var info:tpaintstruct;
-begin
-  IconImageValid := False;
-  Stretch := False;
-  loadbitmapfile(pc(filename));
-  Paint(DC,x,y,0,0,srccopy,info);
-  deleteobject(BitMapHandle);
-end;
-
-function getwidth(thebmp:bmp):integer;
-var Infob:tbitmap;
-  begin
-    getobject(thebmp,10,@infob);
-    getwidth:=infob.bmwidth;
-  end;
-
-function getheight(thebmp:bmp):integer;
-var Infob:tbitmap;
-  begin
-    getobject(thebmp,10,@infob);
-    getheight:=infob.bmheight;
-  end;
-
-procedure unfreeze(Wnd: Hwnd);
-var Msg: TMsg;
-  begin  
-    while PeekMessage(Msg, Wnd, 0, 0, pm_Remove) do
-    begin
-(*  Experimental--                                                       *)
-      if Msg.Message = WM_QUIT then begin Application^.Done; halt; end;
-      TranslateMessage(Msg);
-(*  --Experimental                                                       *)
-      DispatchMessage(Msg);
-    end;
-  end;
-
-procedure defreeze;
-var msg: TMsg;
-  begin
-    while PeekMessage(Msg,0,0,0,PM_REMOVE) do
-    begin
-      if Msg.Message = WM_QUIT then begin Application^.Done; halt; end;
-      TranslateMessage(Msg);
-      DispatchMessage(Msg);
-    end;
-  end;
- 
-procedure startdelay(var t: longint);
-  begin
-    t := gettickcount;
-  end;
-
-procedure finishdelay(milliseconds,t:longint; wnd:hwnd);
-  begin
-    repeat
-      unfreeze(Wnd);
-    until gettickcount-t>=milliseconds;
-  end;
-
-procedure delay(milliseconds:longint; Wnd:Hwnd);
-var t: longint;
-  begin
-    t:=gettickcount;
-    repeat
-    unfreeze(Wnd);
-    until gettickcount-t>=milliseconds;
-  end;
 
 function atan(x,y:real): real;
   begin                                 
@@ -1131,20 +587,20 @@ procedure tstickman.draw;
   begin
     if data.pos[1].dying then
       begin
-        setfont(DC,'Comic Sans MS',30,0,0,0,0,0);
-        txt(DC,320,60,3,color[15],data.name+' is dead!!');
+        asetfont(DC,'Comic Sans MS',30,0,0,0,0,0);
+        atxt(DC,320,60,3,color[15],data.name+' is dead!!');
       end
     else
     for x:= 0 to 30 do
       with pt[x] do
         if plot then
           begin
-            setpen(DC,color1,lstyle,lthick);
-             setbrush(DC,color2,color3,fillmode);
+            asetpen(DC,color1,lstyle,lthick);
+            asetbrush(DC,color2,color3,fillmode);
              case shape of
-            0: qline(DC,x1,y1,x2,y2);
-            1: qcircle(DC,x1,y1,x2,y2);
-            2: qarc(DC,x1,y1,x2,y2,angle1,angle2,way);
+            0: aqline(DC,x1,y1,x2,y2);
+            1: aqcircle(DC,x1,y1,x2,y2);
+            2: aqarc(DC,x1,y1,x2,y2,angle1,angle2,way);
             end;
           end;
   end;
@@ -1642,9 +1098,9 @@ procedure twind.wmsetfocus(var Msg: Tmessage);
     WindDC:=makeDC(HWindow,0);
     GiveDC(MemDC);
     paused:=false;
-    setbrush(WindDC,color[0],color[0],0);
-    setpen(WindDC,color[0],0,2);
-    box(WindDC,0,0,640,480,0,0);
+    asetbrush(WindDC,color[0],color[0],0);
+    asetpen(WindDC,color[0],0,2);
+    abox(WindDC,0,0,640,480,0,0);
   end;
 
 procedure twind.wmkillfocus(var Msg: Tmessage);
@@ -1700,7 +1156,7 @@ procedure twind.wmpaint(var msg: tmessage);
            for i:=0 to 30 do
            with f^.pt[i] do
            begin
-             startdelay(timer);
+             astartdelay(timer);
              x1 := x1 + vx1;
              y1 := y1 + vy1;
              x2 := x2 + vx2;
@@ -1710,29 +1166,29 @@ procedure twind.wmpaint(var msg: tmessage);
              if (y1 < 0) or (y1 > 480) then vy1:=vy1*-1;
              if (y2 < 0) or (y2 > 480) then vy2:=vy2*-1;
            end;
-           setpen(UseDC,0,0,0); setbrush(usedc,0,0,0); box(usedc,0,0,640,480,0,0);
+           asetpen(UseDC,0,0,0); asetbrush(usedc,0,0,0); abox(usedc,0,0,640,480,0,0);
            f^.draw;
            if (not paused) and (UseDC=MemDC) then
              bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-           unfreeze(hwindow);
-           finishdelay(1000 div fps,timer, Hwindow);
-           repeat unfreeze(HWindow); until not paused;
+           aunfreeze(hwindow);
+           afinishdelay(1000 div fps,timer, Hwindow);
+           repeat aunfreeze(HWindow); until not paused;
            if pressany then j:=150;
          end;
        pressany:=false;
-       setpen(UseDC,0,0,0); setbrush(usedc,0,0,0); box(usedc,0,0,640,480,0,0);
+       asetpen(UseDC,0,0,0); asetbrush(usedc,0,0,0); abox(usedc,0,0,640,480,0,0);
        f^.setpoints;
        f^.draw;
        title:=loadbmp(path+'\stick.bmp');
-       drawbmp(memdc,32,320,title,0,0,0);
+       adrawbmp(memdc,32,320,title,0,0,0);
        deletebmp(title);
 
        if (not paused) and (UseDC=MemDC) then
          bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
 
        repeat
-         startdelay(timer);
-         setpen(UseDC,0,0,0); setbrush(usedc,0,0,0); box(usedc,0,0,640,310,0,0);
+         astartdelay(timer);
+         asetpen(UseDC,0,0,0); asetbrush(usedc,0,0,0); abox(usedc,0,0,640,310,0,0);
          i:=random(6);
          j:=j+1;
          j:=j mod 17;
@@ -1750,9 +1206,9 @@ procedure twind.wmpaint(var msg: tmessage);
          f^.advanceframe;
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-         unfreeze(Hwindow);
-         finishdelay(1000 div fps,timer, Hwindow);
-         repeat unfreeze(HWindow) until not paused;
+         aunfreeze(Hwindow);
+         afinishdelay(1000 div fps,timer, Hwindow);
+         repeat aunfreeze(HWindow) until not paused;
        until pressany;
        dispose(f,done);
     end;
@@ -1765,12 +1221,12 @@ procedure twind.wmpaint(var msg: tmessage);
          f: pgenf;
      begin
        mode:='newg';
-       setpen(WindDC,color[0],0,0);
-       setbrush(WindDC,0,0,0);
-       box(WindDC,0,0,640,480,0,0);
-       i := getlng(UseDC,mode);
-       setpen(WindDC,color[9],0,2);
-       qline(WindDC,320-i div 2,110,320+i div 2,110);
+       asetpen(WindDC,color[0],0,0);
+       asetbrush(WindDC,0,0,0);
+       abox(WindDC,0,0,640,480,0,0);
+       i := agetlng(UseDC,mode);
+       asetpen(WindDC,color[9],0,2);
+       aqline(WindDC,320-i div 2,110,320+i div 2,110);
 
        dispose(fpool,done);
        fpool:=new(pfpool,init(1,1));
@@ -1785,18 +1241,6 @@ procedure twind.wmpaint(var msg: tmessage);
        curfighter:=fpool^.at(fpool^.count-1);
        curfighter^.setkeys1;
 
-       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[10],50,True,
-         'Bob 2')));
-       curfighter:=fpool^.at(fpool^.count-1);
-       curfighter^.setkeys1;
-
-       fpool^.insert(new(pstickman,init(usedc,200,350,1,1,color[0],0,True,
-         'Death')));
-       curfighter:=fpool^.at(fpool^.count-1);
-       curfighter^.setcomp;
-
-
-
        players;
 
        for i := 0 to fpool^.count-1 do
@@ -1806,9 +1250,9 @@ procedure twind.wmpaint(var msg: tmessage);
              with f^.data.pos[j] do
                x:=round(640*(i+1)/(fpool^.count+1));
          end;
-              setpen(WindDC,color[0],0,0);
-       setbrush(WindDC,0,0,0);
-       box(WindDC,0,0,640,480,0,0);
+              asetpen(WindDC,color[0],0,0);
+       asetbrush(WindDC,0,0,0);
+       abox(WindDC,0,0,640,480,0,0);
        fight;
      end;
 
@@ -1881,21 +1325,21 @@ procedure twind.wmpaint(var msg: tmessage);
        realhits:=curfighter^.data.maxhits;
        vlast:=0;
        repeat
-         startdelay(timer);
+         astartdelay(timer);
 
-         setpen(UseDC,0,0,0); setbrush(UseDC,0,0,0); box(UseDC,0,0,640,480,0,0);
+         asetpen(UseDC,0,0,0); asetbrush(UseDC,0,0,0); abox(UseDC,0,0,640,480,0,0);
 
-         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0); txt(UseDC,320,15,3,color[15],'Modify Player');
+         asetfont(UseDC,'Comic Sans MS',40,5,0,0,0,0); atxt(UseDC,320,15,3,color[15],'Modify Player');
 
-         setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
-         txt(UseDC,30,80,1,color[15],'Name:');
-         txt(UseDC,130,80,1,color[15],curfighter^.data.name);
+         asetfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+         atxt(UseDC,30,80,1,color[15],'Name:');
+         atxt(UseDC,130,80,1,color[15],curfighter^.data.name);
 
          if click=1 then
            begin
-             setpen(UseDC,color[14],0,0);
-             setbrush(UseDC,-1,-1,0);
-             box(UseDC,25,80,125,110,0,0);
+             asetpen(UseDC,color[14],0,0);
+             asetbrush(UseDC,-1,-1,0);
+             abox(UseDC,25,80,125,110,0,0);
              i := ord(readkey);
              with curfighter^.data do
              if (i=32) or ((i>=65) and (i<=90)) or ((i>=97) and (i<=122)) or ((i>=48) and (i<=57)) then
@@ -1906,30 +1350,30 @@ procedure twind.wmpaint(var msg: tmessage);
 
          if (click>=2) and (click<=17) then
            begin
-             setpen(UseDC,color[14],0,0);
-             setbrush(UseDC,-1,-1,0);
-             box(UseDC,25,120,125,150,0,0);
+             asetpen(UseDC,color[14],0,0);
+             asetbrush(UseDC,-1,-1,0);
+             abox(UseDC,25,120,125,150,0,0);
              curfighter^.data.color:=color[click-2];
            end;
 
-         txt(UseDC,30,120,1,color[15],'Color:');
+         atxt(UseDC,30,120,1,color[15],'Color:');
 
          for i:=0 to 15 do
            begin
              if color[i]=curfighter^.data.color then
-               setpen(UseDC,color[14],0,0)
+               asetpen(UseDC,color[14],0,0)
              else
-               setpen(UseDC,color[0],0,0);
-             setbrush(UseDC,color[i],-1,0);
-             box(UseDC,130+24*i,125,150+24*i,145,0,0);
+             asetpen(UseDC,color[0],0,0);
+             asetbrush(UseDC,color[i],-1,0);
+             abox(UseDC,130+24*i,125,150+24*i,145,0,0);
            end;
 
-         txt(UseDC,30,160,1,color[15],'Strength:');
+         atxt(UseDC,30,160,1,color[15],'Strength:');
          str(realhits*2:0:0,temp);
-         txt(UseDC,130,160,1,color[15],temp+'%');
+         atxt(UseDC,130,160,1,color[15],temp+'%');
          if click=18 then
            begin
-             setpen(UseDC,color[14],0,0); setbrush(UseDC,-1,-1,0); box(UseDC,25,160,125,190,0,0);
+             asetpen(UseDC,color[14],0,0); asetbrush(UseDC,-1,-1,0); abox(UseDC,25,160,125,190,0,0);
              i := ord(readkey);
              with curfighter^.data do
              if ((i>=48) and (i<=57)) then
@@ -1944,32 +1388,32 @@ procedure twind.wmpaint(var msg: tmessage);
              curfighter^.data.lastkill:=not curfighter^.data.lastkill;
              activated:=0; click:=0;
            end;
-         setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
-         txt(UseDC,50,210,1,color[15],'End Fight if last remaining player');
-         setpen(UseDC,color[9],0,4);
+         asetfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+         atxt(UseDC,50,210,1,color[15],'End Fight if last remaining player');
+         asetpen(UseDC,color[9],0,4);
          if curfighter^.data.lastkill then
-           setbrush(UseDC,color[12],0,0)
+           asetbrush(UseDC,color[12],0,0)
          else
-           setbrush(UseDC,0,0,0);
-         qcircle(UseDC,35,220,10,6);
+           asetbrush(UseDC,0,0,0);
+         aqcircle(UseDC,35,220,10,6);
 
-         setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
-         txt(UseDC,30,260,1,color[15],'Keys:');
-         setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+         asetfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+         atxt(UseDC,30,260,1,color[15],'Keys:');
+         asetfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
 
-         txt(UseDC,100,265,1,color[15],'Default Keys 1');
-         txt(UseDC,230,265,1,color[15],'Default Keys 2');
-         setbrush(UseDC,-1,-1,0);
+         atxt(UseDC,100,265,1,color[15],'Default Keys 1');
+         atxt(UseDC,230,265,1,color[15],'Default Keys 2');
+         asetbrush(UseDC,-1,-1,0);
          if click=20 then
            begin
              click:=0; activated:=0;
-             setpen(UseDC,color[14],0,0);  box(UseDC,95,260,205,290,0,0);
+             asetpen(UseDC,color[14],0,0);  abox(UseDC,95,260,205,290,0,0);
              curfighter^.setkeys1;
            end;
          if click=21 then
            begin
              click:=0; activated:=0;
-             setpen(UseDC,color[14],0,0);  box(UseDC,225,260,340,290,0,0);
+             asetpen(UseDC,color[14],0,0);  abox(UseDC,225,260,340,290,0,0);
              curfighter^.setkeys2;
            end;
          if click=22 then
@@ -1983,53 +1427,53 @@ procedure twind.wmpaint(var msg: tmessage);
              curfighter^.setcomp;
            end;
 
-         setpen(UseDC,color[14],0,0);
+         asetpen(UseDC,color[14],0,0);
          if curfighter^.data.keycodes.computer then
-           box(UseDC,450,260,603,290,0,0)
+           abox(UseDC,450,260,603,290,0,0)
          else
            begin
-             box(UseDC,360,260,420,290,0,0);
+             abox(UseDC,360,260,420,290,0,0);
 
-             setfont(UseDC,'Comic Sans MS',15,7,0,0,0,0);
-             txt(UseDC,30,305,1,color[15],'Key Values:');
-             setfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
+             asetfont(UseDC,'Comic Sans MS',15,7,0,0,0,0);
+             atxt(UseDC,30,305,1,color[15],'Key Values:');
+             asetfont(UseDC,'Comic Sans MS',15,0,0,0,0,0);
 
-             txt(UseDC,95+1*(640-95) div 7,305,3,color[15],'Up');
-             txt(UseDC,95+2*(640-95) div 7,305,3,color[15],'Down');
-             txt(UseDC,95+3*(640-95) div 7,305,3,color[15],'Left');
-             txt(UseDC,95+4*(640-95) div 7,305,3,color[15],'Right');
-             txt(UseDC,95+5*(640-95) div 7,305,3,color[15],'Kick');
-             txt(UseDC,95+6*(640-95) div 7,305,3,color[15],'Punch');
+             atxt(UseDC,95+1*(640-95) div 7,305,3,color[15],'Up');
+             atxt(UseDC,95+2*(640-95) div 7,305,3,color[15],'Down');
+             atxt(UseDC,95+3*(640-95) div 7,305,3,color[15],'Left');
+             atxt(UseDC,95+4*(640-95) div 7,305,3,color[15],'Right');
+             atxt(UseDC,95+5*(640-95) div 7,305,3,color[15],'Kick');
+             atxt(UseDC,95+6*(640-95) div 7,305,3,color[15],'Punch');
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.up),kname,20);
-             txt(UseDC,95+1*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+1*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.up,temp);
-             txt(UseDC,95+1*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+1*(640-95) div 7,325,3,color[15],temp);
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.down),kname,20);
-             txt(UseDC,95+2*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+2*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.down,temp);
-             txt(UseDC,95+2*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+2*(640-95) div 7,325,3,color[15],temp);
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.left),kname,20);
-             txt(UseDC,95+3*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+3*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.left,temp);
-             txt(UseDC,95+3*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+3*(640-95) div 7,325,3,color[15],temp);
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.right),kname,20);
-             txt(UseDC,95+4*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+4*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.right,temp);
-             txt(UseDC,95+4*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+4*(640-95) div 7,325,3,color[15],temp);
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.kick),kname,20);
-             txt(UseDC,95+5*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+5*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.kick,temp);
-             txt(UseDC,95+5*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+5*(640-95) div 7,325,3,color[15],temp);
 
              GetKeyNameText(makelong(0,curfighter^.data.keycodes.punch),kname,20);
-             txt(UseDC,95+6*(640-95) div 7,345,3,color[15],strpas(kname));
+             atxt(UseDC,95+6*(640-95) div 7,345,3,color[15],strpas(kname));
              str(curfighter^.data.keycodes.punch,temp);
-             txt(UseDC,95+6*(640-95) div 7,325,3,color[15],temp);
+             atxt(UseDC,95+6*(640-95) div 7,325,3,color[15],temp);
 
              if vlast<>0 then
                begin
@@ -2043,20 +1487,20 @@ procedure twind.wmpaint(var msg: tmessage);
                end;
 
              j:=95+(click-23)*(640-95) div 7;
-             setpen(UseDC,color[14],2,0);
+             asetpen(UseDC,color[14],2,0);
 
-             box(usedc,j-30,303,j+30,368,0,0);
+             abox(usedc,j-30,303,j+30,368,0,0);
           end;
 
-             txt(UseDC,365,265,1,color[15],'Custom');
-             txt(UseDC,455,265,1,color[15],'Computer Controlled');
+             atxt(UseDC,365,265,1,color[15],'Custom');
+             atxt(UseDC,455,265,1,color[15],'Computer Controlled');
 
-             setfont(UseDC,'Comic Sans MS',20,9,0,0,0,0);
-             txt(UseDC,600,400,2,color[15],'Done');
+             asetfont(UseDC,'Comic Sans MS',20,9,0,0,0,0);
+             atxt(UseDC,600,400,2,color[15],'Done');
 
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-         finishdelay(1000 div fps,timer, Hwindow);
+         afinishdelay(1000 div fps,timer, Hwindow);
          click := activated;
          if (pressesc) or (click=30) then fin:=1;
          if fpool=nil then fin:=1 else
@@ -2086,9 +1530,9 @@ procedure twind.wmpaint(var msg: tmessage);
        menuoption[4] := 'Done';
 
        repeat 
-         startdelay(timer);
+         astartdelay(timer);
 
-         setpen(UseDC,0,0,0); setbrush(UseDC,0,0,0); box(UseDC,0,0,640,480,0,0);
+         asetpen(UseDC,0,0,0); asetbrush(UseDC,0,0,0); abox(UseDC,0,0,640,480,0,0);
 
          if (click=10) and (fpool^.count<10) then
            begin
@@ -2127,18 +1571,18 @@ procedure twind.wmpaint(var msg: tmessage);
 
          if click=13 then fin:=1;
 
-         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
-         txt(UseDC,320,30,3,color[15],'Choose a Player');
-         setfont(UseDC,'Comic Sans MS',20,0,1,0,0,0);
-         txt(UseDC,20,90,1,color[15],'#');
-         txt(UseDC,50,90,1,color[15],'Name');
-         txt(UseDC,390,90,1,color[15],'Color');
-         txt(UseDC,460,90,1,color[15],'Type');
-         txt(UseDC,560,90,1,color[15],'Score');
-         setpen(UseDC,rgb(255,0,0),0,0);
-         qline(UseDC,20,115,620,115);
-         qline(UseDC,20,130+10*20,620,130+10*20);
-         setfont(UseDC,'Comic Sans MS',18,0,0,0,0,0);
+         asetfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
+         atxt(UseDC,320,30,3,color[15],'Choose a Player');
+         asetfont(UseDC,'Comic Sans MS',20,0,1,0,0,0);
+         atxt(UseDC,20,90,1,color[15],'#');
+         atxt(UseDC,50,90,1,color[15],'Name');
+         atxt(UseDC,390,90,1,color[15],'Color');
+         atxt(UseDC,460,90,1,color[15],'Type');
+         atxt(UseDC,560,90,1,color[15],'Score');
+         asetpen(UseDC,rgb(255,0,0),0,0);
+         aqline(UseDC,20,115,620,115);
+         aqline(UseDC,20,130+10*20,620,130+10*20);
+         asetfont(UseDC,'Comic Sans MS',18,0,0,0,0,0);
          for i:= 0 to fpool^.count-1 do
            begin
              if i=selected then
@@ -2157,28 +1601,28 @@ procedure twind.wmpaint(var msg: tmessage);
                cl:=color[7];
              curfighter:=fpool^.at(i);
              str(i,temp);
-             txt(UseDC,20,120+20*i,1,cl,temp);
-             txt(UseDC,50,120+20*i,1,cl,curfighter^.data.name);
-             setpen(UseDC,color[14],0,0);
-             setbrush(UseDC,curfighter^.data.color,0,0);
-             box(UseDC,390,120+20*i,410,138+20*i,0,0);
+             atxt(UseDC,20,120+20*i,1,cl,temp);
+             atxt(UseDC,50,120+20*i,1,cl,curfighter^.data.name);
+             asetpen(UseDC,color[14],0,0);
+             asetbrush(UseDC,curfighter^.data.color,0,0);
+             abox(UseDC,390,120+20*i,410,138+20*i,0,0);
              if curfighter^.data.keycodes.computer then temp:='Computer'
                else temp:='Human';
-             txt(UseDC,460,120+20*i,1,cl,temp);
+             atxt(UseDC,460,120+20*i,1,cl,temp);
              str(curfighter^.data.score:0:0,temp);
-             txt(UseDC,560,120+20*i,1,cl,temp);
+             atxt(UseDC,560,120+20*i,1,cl,temp);
            end;
 
          for i := 1 to 4 do
            begin
              if i+9=selected then cl:=color[15] else cl:=color[7];
              if ((i+9=11) and md) or ((i+9=12) and del) then cl:=rgb(255,0,0);
-             txt(UseDC,320,340+i*20,3,cl,menuoption[i]);
+             atxt(UseDC,320,340+i*20,3,cl,menuoption[i]);
            end;
 
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-         finishdelay(1000 div fps,timer, Hwindow);
+         afinishdelay(1000 div fps,timer, Hwindow);
          click := activated; activated:=-1; 
 
          if vlast=38 then selected:=selected-1;
@@ -2197,12 +1641,12 @@ procedure twind.wmpaint(var msg: tmessage);
      begin
        mx:=0;
        mode:='highs';
-       setpen(WindDC,color[0],0,0);
-       setbrush(WindDC,0,0,0);
-       box(WindDC,0,0,640,480,0,0);
-       setfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
-       txt(WindDC,320,30,3,color[15],'High Scores');
-       setpen(WindDC,color[9],0,2);
+       asetpen(WindDC,color[0],0,0);
+       asetbrush(WindDC,0,0,0);
+       abox(WindDC,0,0,640,480,0,0);
+       asetfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
+       atxt(WindDC,320,30,3,color[15],'High Scores');
+       asetpen(WindDC,color[9],0,2);
        pressany:=false;
        scores.sort;
        mx:=scores.data[1].score + 1;
@@ -2213,16 +1657,16 @@ procedure twind.wmpaint(var msg: tmessage);
                for j := 20 to round(530*score/mx)+20 do
                  begin
                   { gradient( }
-                   setpen(WindDC,gradient(rgb(226,45,0),rgb(251,195,67),j,621),0,1);
-                   qline(WindDC,j,75+i*35,j,95+i*35)
+                   asetpen(WindDC,gradient(rgb(226,45,0),rgb(251,195,67),j,621),0,1);
+                   aqline(WindDC,j,75+i*35,j,95+i*35)
                  end;
-               setfont(WindDC,'Comic Sans MS',20,0,0,0,0,0);
-               txt(WindDC,30,69+i*35,1,color[15],name);
+               asetfont(WindDC,'Comic Sans MS',20,0,0,0,0,0);
+               atxt(WindDC,30,69+i*35,1,color[15],name);
                str(score,temp);
-               txt(WindDC,610,69+i*35,2,color[15],temp);
+               atxt(WindDC,610,69+i*35,2,color[15],temp);
               end;  
        repeat
-         unfreeze(hwindow);
+         aunfreeze(hwindow);
        until pressany;
      end;
 
@@ -2230,18 +1674,18 @@ procedure twind.wmpaint(var msg: tmessage);
      var i: integer;
      begin
        mode:='about';
-       setpen(WindDC,color[0],0,0);
-       setbrush(WindDC,0,0,0);
-       box(WindDC,0,0,640,480,0,0);
-       setfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
-       txt(WindDC,320,30,3,color[15],'About The Game');
-       i := getlng(UseDC,'About The Game');
-       setpen(WindDC,color[9],0,2);
-       qline(WindDC,320-i div 2,80,320+i div 2,80);
+       asetpen(WindDC,color[0],0,0);
+       asetbrush(WindDC,0,0,0);
+       abox(WindDC,0,0,640,480,0,0);
+       asetfont(WindDC,'Comic Sans MS',40,5,0,0,0,0);
+       atxt(WindDC,320,30,3,color[15],'About The Game');
+       i := agetlng(UseDC,'About The Game');
+       asetpen(WindDC,color[9],0,2);
+       aqline(WindDC,320-i div 2,80,320+i div 2,80);
 
        pressany:=false;
        repeat
-         unfreeze(hwindow);
+         aunfreeze(hwindow);
        until pressany;
      end;
 
@@ -2278,7 +1722,7 @@ procedure twind.wmpaint(var msg: tmessage);
        f^.pt[15].vx2:=0;
        pressany:=false;
        repeat
-         startdelay(timer);
+         astartdelay(timer);
          for i:=0 to 30 do
            with f^.pt[i] do
            begin
@@ -2291,14 +1735,14 @@ procedure twind.wmpaint(var msg: tmessage);
              if (y1 < 0) or (y1 > 480) then vy1:=vy1*-1;
              if (y2 < 0) or (y2 > 480) then vy2:=vy2*-1;
            end;
-         setpen(UseDC,0,0,0); setbrush(usedc,0,0,0); box(usedc,0,0,640,480,0,0);
+         asetpen(UseDC,0,0,0); asetbrush(usedc,0,0,0); abox(usedc,0,0,640,480,0,0);
          f^.draw;                     
-         setpen(UseDC,color[7],0,0); setbrush(usedc,0,0,0); box(usedc,150,50,490,430,0,0);
-         setfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
-         txt(UseDC,320,60,3,color[15],'Main Menu');
-         i := getlng(UseDC,'Main Menu');
-         setpen(UseDC,color[9],0,2);
-         qline(UseDC,320-i div 2,110,320+i div 2,110);
+         asetpen(UseDC,color[7],0,0); asetbrush(usedc,0,0,0); abox(usedc,150,50,490,430,0,0);
+         asetfont(UseDC,'Comic Sans MS',40,5,0,0,0,0);
+         atxt(UseDC,320,60,3,color[15],'Main Menu');
+         i := agetlng(UseDC,'Main Menu');
+         asetpen(UseDC,color[9],0,2);
+         aqline(UseDC,320-i div 2,110,320+i div 2,110);
          if vlast=38 then selected:=selected-1;
          if vlast=40 then selected:=selected+1;
          if vlast=13 then activated:=selected;
@@ -2310,18 +1754,18 @@ procedure twind.wmpaint(var msg: tmessage);
            begin
              if (i<>selected) and (i<>activated) then
                begin
-                 setfont(UseDC,'Comic Sans MS',30,0,0,0,0,0);
-                 txt(UseDC,320,80+i*40,3,color[7],menuitem[i]);
+                 asetfont(UseDC,'Comic Sans MS',30,0,0,0,0,0);
+                 atxt(UseDC,320,80+i*40,3,color[7],menuitem[i]);
                end;
              if (i=selected) and (i<>activated) then
                begin
-                 setfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
-                 txt(UseDC,320,80+i*40-4,3,color[15],menuitem[i]);
+                 asetfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
+                 atxt(UseDC,320,80+i*40-4,3,color[15],menuitem[i]);
                end;
              if (i=activated) then
                begin
-                 setfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
-                 txt(UseDC,320,80+i*40-4,3,rgb(255,0,0),menuitem[i]);
+                 asetfont(UseDC,'Comic Sans MS',34,0,0,0,0,0);
+                 atxt(UseDC,320,80+i*40-4,3,rgb(255,0,0),menuitem[i]);
                end;
            end;
          case activated of
@@ -2337,9 +1781,9 @@ procedure twind.wmpaint(var msg: tmessage);
 
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-         unfreeze(hwindow);
-         finishdelay(1000 div fps,timer, Hwindow);
-         repeat unfreeze(HWindow); until not paused;
+         aunfreeze(hwindow);
+         afinishdelay(1000 div fps,timer, Hwindow);
+         repeat aunfreeze(HWindow); until not paused;
        until fin=1;
        dispose(f,done);
      end;
@@ -2387,8 +1831,8 @@ procedure twind.wmpaint(var msg: tmessage);
        mode:='fight';
        col:=0;
        repeat
-         startdelay(timer);
-         setpen(UseDC,0,0,0); setbrush(usedc,0,0,0);  box(usedc,0,0,640,480,0,0);
+         astartdelay(timer);
+         asetpen(UseDC,0,0,0); asetbrush(usedc,0,0,0);  abox(usedc,0,0,640,480,0,0);
          for x:=0 to fpool^.count-1 do
            begin
              if not fpool^.alive then exit;
@@ -2397,20 +1841,20 @@ procedure twind.wmpaint(var msg: tmessage);
              with f^ do
                begin
                  scores.add(data.name,round(data.score)); 
-                 unfreeze(HWindow);
+                 aunfreeze(HWindow);
 
                  scx:=320*(x mod 2);
                  scy:=40*(x div 2);
 
-                 setfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
-                 txt(UseDC,scx,scy,1,color[15],data.name);
+                 asetfont(UseDC,'Comic Sans MS',20,0,0,0,0,0);
+                 atxt(UseDC,scx,scy,1,color[15],data.name);
 
-                 setpen(UseDC,rgb(255,0,0),0,1);
-                 qline(UseDC,scx,scy+25,scx+getlng(UseDC,data.name),scy+25);
+                 asetpen(UseDC,rgb(255,0,0),0,1);
+                 aqline(UseDC,scx,scy+25,scx+agetlng(UseDC,data.name),scy+25);
 
-                 setfont(UseDC,'Times New Roman',12,7,0,0,0,0);
+                 asetfont(UseDC,'Times New Roman',12,7,0,0,0,0);
                  str(data.score:0:0,temp);
-                 txt(UseDC,scx,scy+25,1,color[15],'Score: '+temp);
+                 atxt(UseDC,scx,scy+25,1,color[15],'Score: '+temp);
 
                  str(data.hits:0:0,temp);
                  str(data.maxhits,t1);
@@ -2420,26 +1864,26 @@ procedure twind.wmpaint(var msg: tmessage);
                    begin
                      i1:=100-round(data.hits/50*100);
                      str(i1,temp);
-                     txt(UseDC,p1x,p1y,2,color[15],'Strength: '+temp+'%');
+                     atxt(UseDC,p1x,p1y,2,color[15],'Strength: '+temp+'%');
                    end
                  else  
                    begin
-                     txt(UseDC,p1x-18,p1y,2,color[15],'Strength: ');
-                     setfont(UseDC,'Symbol',12,7,0,0,0,0);
-                     txt(UseDC,p1x,p1y,2,rgb(255,0,0),chr(165));
+                     atxt(UseDC,p1x-18,p1y,2,color[15],'Strength: ');
+                     asetfont(UseDC,'Symbol',12,7,0,0,0,0);
+                     atxt(UseDC,p1x,p1y,2,rgb(255,0,0),chr(165));
                    end;
 
-                 setpen(UseDC,-1,0,0);
+                 asetpen(UseDC,-1,0,0);
                  if (data.maxhits=0) then i1:=0 else i1:=round(data.hits/50*90);
                  if (i1>90) then i1:=90;
                  if (i1<0) then  i1:= 0;
 
-                 setbrush(UseDC,data.color,-1,0);
-                 box(UseDC,p1x-90,p1y+19,p1x-i1,p1y+29,0,0);
+                 asetbrush(UseDC,data.color,-1,0);
+                 abox(UseDC,p1x-90,p1y+19,p1x-i1,p1y+29,0,0);
 
-                 setpen(UseDC,color[14],0,0);
-                 setbrush(UseDC,-1,-1,0);
-                 box(UseDC,p1x-90,p1y+19,p1x,p1y+29,0,0);
+                 asetpen(UseDC,color[14],0,0);
+                 asetbrush(UseDC,-1,-1,0);
+                 abox(UseDC,p1x-90,p1y+19,p1x,p1y+29,0,0);
 
                  proximity(x);
                  setpoints;
@@ -2486,8 +1930,8 @@ procedure twind.wmpaint(var msg: tmessage);
            end;
          if (not paused) and (UseDC=MemDC) then
            bitblt(WindDC^.handle,0,0,640,480,MemDC^.handle,0,0,Srccopy);
-         finishdelay(1000 div fps,timer, Hwindow);
-         repeat unfreeze(HWindow) until not paused;
+         afinishdelay(1000 div fps,timer, Hwindow);
+         repeat aunfreeze(HWindow) until not paused;
          if not fpool^.alive then fin:=1;
          if pressesc then begin fin:=1; fighting:=true; end;
       until fin=1;
@@ -2495,12 +1939,11 @@ procedure twind.wmpaint(var msg: tmessage);
 
   procedure pause;
     begin
-      paused := true;
-      setbrush(WindDC,color[7],-1,4);
-      setpen(WindDC,color[0],0,2);
-      box(WindDC,0,0,640,480,0,0);
-      setfont(WindDC,'Stencil',150,0,0,0,0,45);
-      txt(WindDC,50,370,1,color[4],'PAUSED');
+      asetbrush(WindDC,color[7],-1,4);
+      asetpen(WindDC,color[0],0,2);
+      abox(WindDC,0,0,640,480,0,0);
+      asetfont(WindDC,'Stencil',150,0,0,0,0,45);
+      atxt(WindDC,50,370,1,color[4],'PAUSED');
     end;
 
   begin
@@ -2509,9 +1952,9 @@ procedure twind.wmpaint(var msg: tmessage);
       begin
         first:=false;
         paused:=false;
-        setbrush(WindDC,color[0],color[0],0);
-        setpen(WindDC,color[0],0,2);
-        box(WindDC,0,0,640,480,0,0);
+        asetbrush(WindDC,color[0],color[0],0);
+        asetpen(WindDC,color[0],0,2);
+        abox(WindDC,0,0,640,480,0,0);
 
 {        fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],50,True,'Russ')));
         fpool^.insert(new(pstickman,init(usedc,200,300,1,1,color[9],50,True,'Russ')));
@@ -2527,7 +1970,7 @@ procedure twind.wmpaint(var msg: tmessage);
 procedure TWind.GetWindowClass( var WC: TWndClass);
   begin
     TWindow.GetWindowClass(WC);
-    WC.hIcon := LoadIcon(hInstance, PChar(1));
+    WC.hIcon := LoadIcon(hInstance, PChar(999));
   end;
 
 procedure twind.givedc(TheDC: SDC); 
