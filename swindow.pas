@@ -69,7 +69,7 @@ type psfwindow = ^tsfwindow;
        procedure menurestart(var Msg:Tmessage); virtual cm_First + menu_restart;
        procedure menumainmenu(var Msg:Tmessage); virtual cm_First + menu_mainmenu;
        procedure menuplayers(var Msg:Tmessage); virtual cm_First + menu_players;
-       procedure menuplayer(var Msg:Tmessage); virtual wm_user + wm_player;
+       procedure menuplayer(var Msg:Tmessage); virtual wm_first + wm_user + wm_player;
        procedure menuhighscores(var Msg:Tmessage); virtual cm_First + menu_highscores;
        procedure menuaboutgame(var Msg:Tmessage); virtual cm_First + menu_aboutgame;
        procedure menurungame(var Msg:Tmessage); virtual cm_First + menu_rungame;
@@ -258,28 +258,19 @@ procedure tsfwindow.fullsize;
   begin
     if not fullscreen then
       begin
-        fullscreen := true;
         hidemenu;
         setwindowlong(hwindow, GWL_Style,
           getwindowlong(hwindow, GWL_Style) and not
           (ws_border or ws_thickframe or ws_caption));
         ShowWindow(hwindow, sw_maximize);
-        setwindowpos(hwindow,0,0,0,0,0,SWP_NOZORDER or SWP_NOMOVE or SWP_NOSIZE or SWP_DRAWFRAME);
+        setwindowpos(hwindow,0,0,0,getsystemmetrics(SM_CXSCREEN),getsystemmetrics(SM_CXSCREEN),SWP_NOZORDER);
+        fullscreen := true;
       end;
   end;
 
 procedure tsfwindow.windowsize;
   begin
-    if fullscreen then
-      begin
-        fullscreen := false;
-        showmenu;
-        setwindowlong(hwindow, GWL_Style,
-          getwindowlong(hwindow, GWL_Style) or
-          ws_caption or ws_border or ws_thickframe);
-        ShowWindow(hwindow, sw_restore);
-        setwindowpos(hwindow,0,0,0,0,0,SWP_NOZORDER or SWP_NOMOVE or SWP_NOSIZE or SWP_DRAWFRAME);
-      end;
+    ShowWindow(hwindow, sw_restore);
   end;
 
 procedure tsfwindow.swapfps;
@@ -376,6 +367,15 @@ procedure tsfwindow.Paint(PaintDC: HDC; var PaintInfo: TPaintStruct); {wm_paint}
 procedure tsfwindow.WMsize(var Msg: Tmessage); {wm_size}
   begin
     twindow.wmsize(Msg);
+    if (msg.wparam = SIZE_RESTORED) and fullscreen then
+      begin
+        fullscreen := false;
+        showmenu;
+        setwindowlong(hwindow, GWL_Style,
+        getwindowlong(hwindow, GWL_Style) or
+        ws_caption or ws_border or ws_thickframe);
+        setwindowpos(hwindow,0,0,0,0,0,SWP_NOZORDER or SWP_NOMOVE or SWP_NOSIZE or SWP_DRAWFRAME);
+      end;
     resize;
   end;
 
@@ -512,7 +512,6 @@ procedure tsfwindow.menuplayers(var Msg:Tmessage);
 
 procedure tsfwindow.menuplayer(var Msg:Tmessage);
   begin
-    writeln('menuplayer called');
     runplayer(msg.wparam);
   end;
 
