@@ -166,6 +166,29 @@ var M: TMsg;
     end;
   end;
 
+procedure defreeze;
+var msg: TMsg;
+  begin
+    while PeekMessage(Msg,0,0,0,PM_REMOVE) do
+    begin
+      if Msg.Message = WM_QUIT then begin Application^.Done; halt; end;
+      TranslateMessage(Msg);
+      DispatchMessage(Msg);
+    end;
+  end;
+
+procedure startdelay(var t: longint);
+  begin
+    t := gettickcount;
+  end;
+
+procedure finishdelay(milliseconds,t:longint; wnd:hwnd);
+  begin
+    repeat
+      unfreeze(Wnd);
+    until gettickcount-t>=milliseconds;
+  end;
+
 procedure delay(milliseconds:longint; Wnd:Hwnd);
 var t: longint;
   begin
@@ -245,11 +268,16 @@ procedure setcurdc(tDC:HDC);
     DC := tDC;
   end;
 
+function abovezero(number: integer):integer;
+  begin
+    if number < 0 then abovezero := 0 else abovezero := number;
+  end;
+
 
 {- END ------------------------------------------  Drawing Commands}
 
 
-const fps = 5;
+const fps = 10;
       gamespeed = 1;
 
       fframes = round(2*fps/gamespeed+1);
@@ -397,9 +425,6 @@ procedure tstickman.draw;
     with pos[1] do
       begin
         setcurdc(DC);
-        setbrush(DC,0,0,0);
-        box(DC,0,0,640,480,0,0);
-
         duckby := duck*(defl1+defl2);
         cty    := round(y-duckby);
         ctx    := round(x);
@@ -531,13 +556,40 @@ procedure tstickman.subinit;
     nose      := 1.4;
   end;
 
+type pfpool = ^tfpool;
+     tfpool = object(tcollection)
+       alive: bool;
+       constructor Init(ALimit, ADelta: Integer);
+       destructor done; virtual;
+     end;
+
+constructor tfpool.Init(ALimit, ADelta: Integer);
+  begin
+    tcollection.Init(ALimit, ADelta);
+    alive:=true;
+  end;
+
+destructor tfpool.done;
+  var x: integer;
+      f: pgenf; 
+  begin
+    alive := false;
+    count := 0;
+    for x := 0 to count-1 do
+      begin
+        f := at(x);
+        dispose(f,done)
+      end;
+    tcollection.done;   
+  end;
+
 type pwind = ^twind;
      twind = object(twindow)
        WindDC: HDC;
        mode: string;
        first: boolean;
        ldown,rdown:boolean;
-       fpool: pcollection;
+       fpool: pfpool;
        curfighter: pgenf;
        constructor init(AParent: PWindowsObject; ATitle: PChar);
        procedure WMLButtonDown(var Msg: TMessage);  virtual wm_First + wm_LButtonDown;
@@ -565,7 +617,7 @@ constructor twind.Init(AParent: PWindowsObject; ATitle: PChar);
       end;
     WindDC := GetDC(HWindow);
     first:=TRUE;
-    fpool:=new(pcollection,init(1,1));
+    fpool:=new(pfpool,init(1,1));
   end;
 
 procedure TWind.GetWindowClass( var WC: TWndClass);
@@ -583,7 +635,7 @@ destructor twind.done;
   end;
 
 procedure TWind.WMLButtonDown(var Msg: TMessage);
- var S: array[0..9] of Char;
+  var S: array[0..9] of Char;
   begin
     defwndproc(msg);
     setcapture(Hwindow);
@@ -654,20 +706,30 @@ procedure twind.wmpaint(var msg: tmessage);
    procedure fight;
      var x,fin: integer;
          f: pgenf;
+         timer: longint;
+         flip: bool;
      begin
       fin:=0;
       mode:='fight';
       repeat
+        startdelay(timer);
+        setbrush(WindDC,0,0,0);  box(WindDC,0,0,640,480,0,0);
         for x:=0 to fpool^.count-1 do
           begin
+            if not fpool^.alive then exit;
             f:=fpool^.at(x);
             with f^ do
               begin
                 unfreeze(HWindow);
                 draw;
+                setbrush(winddc,color[integer(flip)*15],0,0);
+                box(winddc,0,0,30,30,0,0);
+                flip:=not flip;
                 advanceframe;
               end;
           end;
+         finishdelay(1000 div fps,timer, Hwindow); 
+         if not fpool^.alive then fin:=1;
       until fin=1;
      end;
 
